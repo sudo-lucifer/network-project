@@ -12,13 +12,11 @@
 
 
 /* Rather arbitrary. In real life, be careful with buffer overflow */
-#define MAXBUF 1024  
+#define MAXBUF 8192
 
 typedef struct sockaddr SA;
 
 void respond_get(int connFd, char* rootFol, char* req_obj) {
-
-    
     char loc[MAXBUF];                   // full file path
     char headr[MAXBUF];                 // buffer for header
 
@@ -30,13 +28,14 @@ void respond_get(int connFd, char* rootFol, char* req_obj) {
         strcat(loc, "/");   
     }
     strcat(loc, req_obj);
-    printf(" File location is: %s \n", loc);
+
+    printf("File location is: %s \n", loc);
     int fd = open( loc , O_RDONLY);
 
     if (fd < 0){
         sprintf(headr, 
                 "HTTP/1.1 404 not found\r\n"
-                "Server: Micro\r\n"
+                "Server: ICWS\r\n"
                 "Connection: close\r\n");
         write_all(connFd, headr, strlen(headr));
         return;
@@ -100,32 +99,52 @@ void respond_get(int connFd, char* rootFol, char* req_obj) {
 
 void serve_http(int connFd, char* rootFol) {
     char buf[MAXBUF];
+    char lineByline[MAXBUF];
+    int readRet;
+    int currentRead;
 
-    int readRet = read(connFd, buf, MAXBUF);
-    if (!readRet)
-        return ;  /* Quit if we can't read the first line */
 
+    while ((currentRead = read_line(connFd,lineByline,MAXBUF)) > 0){
+            strcat(buf, lineByline);
+            readRet += currentRead;
+            if (strcmp(lineByline, "\r\n") == 0){
+                    break;
+            }
+    }
     printf("LOG: %s\n", buf);
-    /* [METHOD] [URI] [HTTPVER] */
-    // char method[MAXBUF], uri[MAXBUF], httpVer[MAXBUF];
-    // sscanf(buf, "%s %s %s", method, uri, httpVer);
-    // while (read_line(connFd, buf, MAXBUF)){
-            // if (strcmp(buf, "\r\n") == 0){
-                    // break;
-            // }
-            // printf("%s\n", buf);
-    // }
     Request *request = parse(buf,readRet,connFd);
 
-    if (strcasecmp(request->http_method, "GET") == 0 &&
-        strcasecmp(request->http_version, "HTTP/1.1") == 0) {
-        printf("LOG: %s\n", request->http_uri);
-        respond_get(connFd, rootFol, request->http_uri);
+    
+    if (strcasecmp(request->http_version, "HTTP/1.1") == 0) {
+            if (strcasecmp(request->http_method, "GET") == 0 &&
+                            strcasecmp(request->http_version, "HTTP/1.1") == 0) {
+                    printf("LOG from Get: %s\n", request->http_uri);
+                    respond_get(connFd, rootFol, request->http_uri);
+            }
+            else if (strcasecmp(request->http_method, "HEAD") == 0 &&
+                            strcasecmp(request->http_version, "HTTP/1.1") == 0) {
+                    printf("LOG from HEAD: %s\n", request->http_uri);
+                    respond_get(connFd, rootFol, request->http_uri);
+            }
     }
     else {
-        printf("LOG: Unknown request\n");
+        char headr[MAXBUF];
+        if (strcmp(request->http_version, "HTTP/1.1")){
+                sprintf(headr, 
+                        "HTTP/1.1 505 HTTP version not supported\r\n"
+                        "Server: ICWS\r\n"
+                        "Connection: close\r\n");
+        }
+        else{
+                sprintf(headr, 
+                        "HTTP/1.1 501 not implemented\r\n"
+                        "Server: ICWS\r\n"
+                        "Connection: close\r\n");
+        }
+        write_all(connFd, headr, strlen(headr));
     }
-    
+    free(request->headers);
+    free(request);
 }
 
 int main(int argc, char* argv[]) {
