@@ -229,7 +229,13 @@ request_header: request_header token ows t_colon ows text ows t_crlf{
 request: request_line request_header t_crlf{
 	YPRINTF("parsing_request: Matched Success.\n");
 	return SUCCESS;
+}; |
+request_line t_crlf{
+	YPRINTF("parsing_request: Matched Success.\n");
+	return SUCCESS;
 };
+
+
 
 
 
