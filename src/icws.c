@@ -16,6 +16,181 @@
 
 typedef struct sockaddr SA;
 
+char * getExt(char * fileName){
+        char * copyFileName = fileName;
+        char * currentFound;
+        
+        while ((currentFound = strchr(copyFileName, '.')) != NULL){
+                printf("passed first\n");
+                char * token;
+                if (strlen(currentFound) != 1){
+                    token = strchr(currentFound, '.') + 1;
+                    copyFileName = token;
+                }
+                
+        }
+        return copyFileName;
+
+}
+
+char* check_mime(char* ext){
+    if ( strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0 )
+        return "text/html";
+    else if ( strcmp(ext, "jpg") == 0 || strcmp(ext, "jpeg") == 0)
+        return "image/jpeg";
+    else if ( strcmp(ext, "css") == 0 )
+        return "text/css";
+    else if ( strcmp(ext, "csv") == 0 )
+        return "text/csv";
+    else if ( strcmp(ext, "txt") == 0 )
+        return "text/plain";
+    else if ( strcmp(ext, "png") == 0 )
+        return "image/png";
+    else if ( strcmp(ext, "gif") == 0 )
+        return "image/gif";
+    
+    else if ( strcmp(ext, "acc") == 0 )
+        return "audio/acc";
+    else if ( strcmp(ext, "abw") == 0 )
+        return "application/x-abiword";
+    else if ( strcmp(ext, "arc") == 0 )
+        return "application/x-freearc";
+    else if ( strcmp(ext, "avi") == 0 )
+        return "video/x-msvideo";
+    else if ( strcmp(ext, "azw") == 0 )
+        return "application/vnd.amazon.ebook";
+    else if ( strcmp(ext, "bin") == 0 )
+        return "application/octet-stream";
+    else if ( strcmp(ext, "bmp") == 0 )
+        return "image/bmp";
+    else if ( strcmp(ext, "bz") == 0 )
+        return "application/x-bzip";
+    else if ( strcmp(ext, "bz2") == 0 )
+        return "application/x-bzip";
+    else if ( strcmp(ext, "cda") == 0 )
+        return "application/x-cda";
+    else if ( strcmp(ext, "doc") == 0 )
+        return "application/msword";
+    else if ( strcmp(ext, "docx") == 0 )
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    else if ( strcmp(ext, "eot") == 0 )
+        return "application/vnd.ms-fontobject";
+    else if ( strcmp(ext, "epub") == 0 )
+        return "application/epub+zip";
+    else if ( strcmp(ext, "gz") == 0 )
+        return "application/gzip";
+    else if ( strcmp(ext, "ico") == 0 )
+        return "image/vnd.microsoft.icon";
+    else if ( strcmp(ext, "ics") == 0 )
+        return "text/calendar";
+    else if ( strcmp(ext, "jar") == 0 )
+        return "application/java-archive";
+
+    else if ( strcmp(ext, "js") == 0 )
+        return "application/javascript";
+
+    else if ( strcmp(ext, "json") == 0 )
+        return "application/json";
+    else if ( strcmp(ext, "jsonld") == 0 )
+        return "application/ld+json";
+    else if ( strcmp(ext, "mid") == 0 || strcmp(ext, "midi") == 0)
+        return "audio/midi"; // "audio/x-midi"
+    else if ( strcmp(ext, "mjs") == 0 )
+        return "text/javascript";
+    else if ( strcmp(ext, "mp3") == 0 )
+        return "audio/mpeg";
+    else if ( strcmp(ext, "mp4") == 0 )
+        return "video/mp4";
+    else if ( strcmp(ext, "mpeg") == 0 )
+        return "video/mpeg";
+    else if ( strcmp(ext, "mpkg") == 0 )
+        return "application/vnd.apple.installer+xml";
+    else if ( strcmp(ext, "odp") == 0 )
+        return "application/vnd.oasis.opendocument.presentation";
+    else if ( strcmp(ext, "ods") == 0 )
+        return "vnd.oasis.opendocument.spreadsheet";
+    else if ( strcmp(ext, "odt") == 0 )
+        return "vnd.oasis.opendocument.txt";
+    else if ( strcmp(ext, "oga") == 0 )
+        return "audio/ogg";
+    else if ( strcmp(ext, "ogv") == 0 )
+        return "video/ogg";
+    else if ( strcmp(ext, "ogx") == 0 )
+        return "application/ogg";
+    else if ( strcmp(ext, "opus") == 0 )
+        return "audio/opus";
+    else if ( strcmp(ext, "otf") == 0 )
+        return "font/otf";
+    else if ( strcmp(ext, "pdf") == 0 )
+        return "application/pdf";
+    else if ( strcmp(ext, "php") == 0 )
+        return "application/x-httpd-php";
+    else if ( strcmp(ext, "ppt") == 0 )
+        return "application/vnd.ms-powerpoint";
+    else if ( strcmp(ext, "pptx") == 0 )
+        return "application/vnd.openxmlformats-officedocument.presentational.presentation";
+    else if ( strcmp(ext, "rar") == 0 )
+        return "application/vnd.rar";
+    else if ( strcmp(ext, "rtf") == 0 )
+        return "application/rtf";
+    else if ( strcmp(ext, "sh") == 0 )
+        return "application/x-sh";
+    else if ( strcmp(ext, "svg") == 0 )
+        return "image/svg+xml";
+    else if ( strcmp(ext, "swf") == 0 )
+        return "application/x-shockwave-flash";
+    else if ( strcmp(ext, "tar") == 0 )
+        return "application/x-tar";
+    else if ( strcmp(ext, "tif") == 0 || strcmp(ext, "tiff") == 0 )
+        return "image/tiff";
+    else if ( strcmp(ext, "ts") == 0 )
+        return "video/mp2t";
+    else if ( strcmp(ext, "ttf") == 0 )
+        return "font/ttf";
+    else if ( strcmp(ext, "vsd") == 0 )
+        return "application/vnd.visio";
+    else if ( strcmp(ext, "wav") == 0 )
+        return "audio/wav";
+    else if ( strcmp(ext, "weba") == 0 )
+        return "audio/webm";
+    else if ( strcmp(ext, "webm") == 0 )
+        return "video/webm";
+    else if ( strcmp(ext, "webp") == 0 )
+        return "image/webp";
+    else if ( strcmp(ext, "woff") == 0 )
+        return "font/woff";
+    else if ( strcmp(ext, "woff2") == 0 )
+        return "font/woff2";
+    else if ( strcmp(ext, "xhtml") == 0 )
+        return "application/xhtml+xml";
+    else if ( strcmp(ext, "xls") == 0 )
+        return "application/vnd.ms-exel";
+    else if ( strcmp(ext, "xlsx") == 0 )
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    
+    else if ( strcmp(ext, "xml") == 0 )
+        return "application/xml"; // text/xml if human readable
+
+    else if ( strcmp(ext, "xul") == 0 )
+        return "application/vnd.mozilla.xul+xml";
+    else if ( strcmp(ext, "zip") == 0 )
+        return "application/zip";
+
+    else if ( strcmp(ext, "3gp") == 0 )
+        return "video/3gpp"; // audio/3gpp if doesnt contain video
+    else if ( strcmp(ext, ".3g2") == 0 )
+        return "video/3gpp2"; // audio/3gpp2 if doesnt contain video
+
+    else if ( strcmp(ext, "7z") == 0 )
+        return "application/x-7z-compressed";
+
+    else{
+        return "null";
+    }
+
+}
+
+
 void respond_get(int connFd, char* rootFol, char* req_obj) {
     char loc[MAXBUF];                   // full file path
     char headr[MAXBUF];                 // buffer for header
@@ -41,7 +216,6 @@ void respond_get(int connFd, char* rootFol, char* req_obj) {
         return;
     }
 
-    // ====================================
     struct stat st;
     fstat(fd, &st);
     size_t filesize = st.st_size;
@@ -50,27 +224,17 @@ void respond_get(int connFd, char* rootFol, char* req_obj) {
         close(fd);
         return ;
     }
-    // ====================================
     // find extension
-    char * ext = strchr(req_obj, '.') + 1;
-    //printf("%s\n", ext);
-    char * mime;
-    
-    // check extension
-    if ( strcmp(ext, "html") == 0 )
-        mime = "text/html";
-    else if ( strcmp(ext, "jpg") == 0 )
-        mime = "image/jpeg";
-    else if ( strcmp(ext, "jpeg") == 0 )
-        mime = "image/jpeg";
-    else{
-        mime = "null";
-    }
+    char * ext = getExt(req_obj);
+    char * mime = check_mime(ext);
+    printf("mime: %s\n", mime);
 
-    // ====================================
     if ( strcmp(mime, "null")==0){
-        char * msg = "File type not supported\n";
-        write_all(connFd, msg , strlen(msg) );
+        sprintf(headr, 
+                        "HTTP/1.1 400 Bad Request\r\n"
+                        "Server: ICWS\r\n"
+                        "Connection: close\r\n");
+        write_all(connFd, headr , strlen(headr) );
         close(fd);
         return;
     }
@@ -85,8 +249,9 @@ void respond_get(int connFd, char* rootFol, char* req_obj) {
 
     // ====================================
 
-    char buf[filesize];
+    char buf[MAXBUF];
     ssize_t numRead;
+    // printf("passed here\n");
     while ((numRead = read(fd, buf, MAXBUF)) > 0) {
         write_all(connFd, buf, numRead);
     }
