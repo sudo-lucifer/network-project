@@ -25,7 +25,11 @@ struct survival_bag {
 char * dirName;
 
 
-
+char * getCurrentTime(){
+        time_t rawTime;
+        time(&rawTime);
+        return asctime(localtime(&rawTime));
+}
 
 char * getExt(char * fileName){
         char * copyFileName = fileName;
@@ -202,7 +206,8 @@ char* check_mime(char* ext){
 }
 
 
-void respond_get(int connFd, char* req_obj) {
+void respond_get(int connFd, char* req_obj, int isHEAD) {
+    char * cuurentDate = getCurrentTime();
     char loc[MAXBUF];                   // full file path
     char headr[MAXBUF];                 // buffer for header
 
@@ -222,7 +227,8 @@ void respond_get(int connFd, char* req_obj) {
         sprintf(headr, 
                 "HTTP/1.1 404 not found\r\n"
                 "Server: ICWS\r\n"
-                "Connection: close\r\n");
+                "Connection: close\r\n"
+                "Date: %s\r\n\r\n", cuurentDate);
         write_all(connFd, headr, strlen(headr));
         return;
     }
@@ -230,6 +236,7 @@ void respond_get(int connFd, char* req_obj) {
     struct stat attr;
     fstat(fd, &attr);
     size_t filesize = attr.st_size;
+    char * modTime = ctime(&attr.st_mtime);
 
     // find extension
     char * ext = getExt(req_obj);
@@ -240,7 +247,8 @@ void respond_get(int connFd, char* req_obj) {
         sprintf(headr, 
                         "HTTP/1.1 400 Bad Request\r\n"
                         "Server: ICWS\r\n"
-                        "Connection: close\r\n");
+                        "Connection: close\r\n"
+                        "Date: %s\r\n\r\n", cuurentDate);
         write_all(connFd, headr , strlen(headr) );
         close(fd);
         return;
@@ -252,16 +260,19 @@ void respond_get(int connFd, char* req_obj) {
             "Connection: close\r\n"
             "Content-length: %lu\r\n"
             "Content-type: %s\r\n"
-            "Last modified date: %s\r\n\r\n", filesize, mime, ctime(&attr.st_mtime));
+            "Last modified date: %s"
+            "Date: %s\r\n\r\n", filesize, mime, modTime, cuurentDate);
 
     write_all(connFd, headr, strlen(headr));
 
     // ====================================
 
-    char buf[MAXBUF];
-    ssize_t numRead;
-    while ((numRead = read(fd, buf, MAXBUF)) > 0) {
-        write_all(connFd, buf, numRead);
+    if (!isHEAD){
+            char buf[MAXBUF];
+            ssize_t numRead;
+            while ((numRead = read(fd, buf, MAXBUF)) > 0) {
+                    write_all(connFd, buf, numRead);
+            }
     }
 
     if ( (close(fd)) < 0 ){
@@ -271,6 +282,7 @@ void respond_get(int connFd, char* req_obj) {
 
 
 void serve_http(int connFd, char* rootFol) {
+    char * cuurentDate = getCurrentTime();
     char buf[MAXBUF];
     char lineByline[MAXBUF];
     int readRet;
@@ -293,34 +305,41 @@ void serve_http(int connFd, char* rootFol) {
             sprintf(headr, 
                             "HTTP/1.1 400 bad request\r\n"
                             "Server: ICWS\r\n"
-                            "Connection: close\r\n");
+                            "Connection: close\r\n"
+                            "Date: %s\r\n\r\n", cuurentDate);
             write_all(connFd, headr,strlen(headr));
+            // return;
 
     }
     else if (strcasecmp(request->http_version, "HTTP/1.1")){
             sprintf(headr, 
                             "HTTP/1.1 505 HTTP version not supported\r\n"
                             "Server: ICWS\r\n"
-                            "Connection: close\r\n");
+                            "Connection: close\r\n"
+                            "Date: %s\r\n\r\n", cuurentDate);
             write_all(connFd, headr,strlen(headr));
     }
     else if (strcasecmp(request->http_method, "GET") == 0){
-            printf("LOG from Get: %s\n", request->http_uri);
-            respond_get(connFd, request->http_uri);
+            printf("LOG: GET method matched\n");
+            respond_get(connFd, request->http_uri, 0);
     }
     else if (strcasecmp(request->http_method, "HEAD") == 0){
-            printf("LOG from HEAD: %s\n", request->http_uri);
-            respond_get(connFd, request->http_uri);
+            printf("LOG: HEAD mrthod matched\n");
+            respond_get(connFd, request->http_uri, 1);
     }
     else {
             sprintf(headr, 
                             "HTTP/1.1 501 not implemented\r\n"
                             "Server: ICWS\r\n"
-                            "Connection: close\r\n");
+                            "Connection: close\r\n"
+                            "Date: %s\r\n\r\n", cuurentDate);
             write_all(connFd, headr,strlen(headr));
     }
+    printf("passed before free\n");
     free(request->headers);
+    printf("passed headers free\n");
     free(request);
+    printf("passed after free\n");
 }
 
 
@@ -333,7 +352,7 @@ void* conn_handler(void *args) {
     close(context->connFd);
     
     free(context); /* Done, get rid of our survival bag */
-    printf("LOG: Close connection\n");
+    printf("LOG: Close connection\n\n");
 
     return NULL; /* Nothing meaningful to return */
 }
