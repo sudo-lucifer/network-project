@@ -7,6 +7,7 @@
 #include<string.h>
 #include<unistd.h>
 #include <fcntl.h>
+#include<pthread.h>
 #include "pcsa_net.h"
 #include "parse.h"
 
@@ -15,13 +16,19 @@
 #define MAXBUF 8192
 
 typedef struct sockaddr SA;
+struct survival_bag {
+        struct sockaddr_storage clientAddr;
+        int connFd;
+};
+char * dirName;
+
 
 char * getExt(char * fileName){
         char * copyFileName = fileName;
         char * currentFound;
         
         while ((currentFound = strchr(copyFileName, '.')) != NULL){
-                printf("passed first\n");
+                // printf("passed first\n");
                 char * token;
                 if (strlen(currentFound) != 1){
                     token = strchr(currentFound, '.') + 1;
@@ -191,11 +198,11 @@ char* check_mime(char* ext){
 }
 
 
-void respond_get(int connFd, char* rootFol, char* req_obj) {
+void respond_get(int connFd, char* req_obj) {
     char loc[MAXBUF];                   // full file path
     char headr[MAXBUF];                 // buffer for header
 
-    strcpy(loc, rootFol);               // loc = rootFol
+    strcpy(loc, dirName);               // loc = rootFol
     if (strcmp(req_obj, "/") == 0){     // if input == / then req_obj = /index
         req_obj = "/index.html";
     } 
@@ -251,7 +258,6 @@ void respond_get(int connFd, char* rootFol, char* req_obj) {
 
     char buf[MAXBUF];
     ssize_t numRead;
-    // printf("passed here\n");
     while ((numRead = read(fd, buf, MAXBUF)) > 0) {
         write_all(connFd, buf, numRead);
     }
@@ -279,17 +285,25 @@ void serve_http(int connFd, char* rootFol) {
     printf("LOG: %s\n", buf);
     Request *request = parse(buf,readRet,connFd);
 
+    char headr[MAXBUF];
     
     if (strcasecmp(request->http_version, "HTTP/1.1") == 0) {
             if (strcasecmp(request->http_method, "GET") == 0 &&
                             strcasecmp(request->http_version, "HTTP/1.1") == 0) {
                     printf("LOG from Get: %s\n", request->http_uri);
-                    respond_get(connFd, rootFol, request->http_uri);
+                    respond_get(connFd, request->http_uri);
             }
             else if (strcasecmp(request->http_method, "HEAD") == 0 &&
                             strcasecmp(request->http_version, "HTTP/1.1") == 0) {
                     printf("LOG from HEAD: %s\n", request->http_uri);
-                    respond_get(connFd, rootFol, request->http_uri);
+                    respond_get(connFd, request->http_uri);
+            }
+            else {
+                    sprintf(headr, 
+                                    "HTTP/1.1 501 not implemented\r\n"
+                                    "Server: ICWS\r\n"
+                                    "Connection: close\r\n");
+                    write_all(connFd, headr,strlen(headr));
             }
     }
     else {
@@ -312,26 +326,63 @@ void serve_http(int connFd, char* rootFol) {
     free(request);
 }
 
+
+void* conn_handler(void *args) {
+    struct survival_bag *context = (struct survival_bag *) args;
+    
+    pthread_detach(pthread_self());
+    serve_http(context->connFd, dirName);
+
+    close(context->connFd);
+    
+    free(context); /* Done, get rid of our survival bag */
+
+    return NULL; /* Nothing meaningful to return */
+}
+
+
 int main(int argc, char* argv[]) {
-    int listenFd = open_listenfd(argv[1]);
+        int listenFd;
+        if (argc >= 3){
+                listenFd = open_listenfd(argv[2]);
 
-    for (;;) {
-        struct sockaddr_storage clientAddr;
-        socklen_t clientLen = sizeof(struct sockaddr_storage);
+        }
+        else {
+                printf("No port specified\n");
+        }
 
-        int connFd = accept(listenFd, (SA *) &clientAddr, &clientLen);
-        if (connFd < 0) { fprintf(stderr, "Failed to accept\n"); continue; }
+        if (argc >= 5){
+                dirName = argv[4];
+        }
+        else{
+                dirName = "./";
+        }
 
-        char hostBuf[MAXBUF], svcBuf[MAXBUF];
-        if (getnameinfo((SA *) &clientAddr, clientLen, 
-                        hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
-            printf("Connection from %s:%s\n", hostBuf, svcBuf);
-        else
-            printf("Connection from ?UNKNOWN?\n");
-                
-        serve_http(connFd, argv[2]);
-        close(connFd);
-    }
+        for (;;) {
 
-    return 0;
+                struct sockaddr_storage clientAddr;
+                socklen_t clientLen = sizeof(struct sockaddr_storage);
+                pthread_t threadInfo;
+
+                int connFd = accept(listenFd, (SA *) &clientAddr, &clientLen);
+
+                if (connFd < 0) { fprintf(stderr, "Failed to accept\n"); continue; }
+                struct survival_bag *context = 
+                        (struct survival_bag *) malloc(sizeof(struct survival_bag));
+                context->connFd = connFd;
+
+                memcpy(&context->clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
+
+                char hostBuf[MAXBUF], svcBuf[MAXBUF];
+                if (getnameinfo((SA *) &clientAddr, clientLen, 
+                                        hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
+                        printf("Connection from %s:%s\n", hostBuf, svcBuf);
+                else
+                        printf("Connection from ?UNKNOWN?\n");
+
+                pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
+        }
+
+
+        return 0;
 }
