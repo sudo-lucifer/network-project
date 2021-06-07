@@ -1,3 +1,4 @@
+#include <strings.h>
 #include<sys/types.h>
 #include<sys/socket.h>
 #include<sys/stat.h>
@@ -5,6 +6,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include <time.h>
 #include<unistd.h>
 #include <fcntl.h>
 #include<pthread.h>
@@ -21,6 +23,8 @@ struct survival_bag {
         int connFd;
 };
 char * dirName;
+
+
 
 
 char * getExt(char * fileName){
@@ -223,20 +227,16 @@ void respond_get(int connFd, char* req_obj) {
         return;
     }
 
-    struct stat st;
-    fstat(fd, &st);
-    size_t filesize = st.st_size;
-    if (filesize < 0){
-        printf("Filesize Error\n");
-        close(fd);
-        return ;
-    }
+    struct stat attr;
+    fstat(fd, &attr);
+    size_t filesize = attr.st_size;
+
     // find extension
     char * ext = getExt(req_obj);
     char * mime = check_mime(ext);
     printf("mime: %s\n", mime);
 
-    if ( strcmp(mime, "null")==0){
+    if (filesize < 0 || strcmp(mime, "null") == 0){
         sprintf(headr, 
                         "HTTP/1.1 400 Bad Request\r\n"
                         "Server: ICWS\r\n"
@@ -245,12 +245,14 @@ void respond_get(int connFd, char* req_obj) {
         close(fd);
         return;
     }
+
     sprintf(headr, 
             "HTTP/1.1 200 OK\r\n"
             "Server: Micro\r\n"
             "Connection: close\r\n"
             "Content-length: %lu\r\n"
-            "Content-type: %s\r\n\r\n", filesize, mime);
+            "Content-type: %s\r\n"
+            "Last modified date: %s\r\n\r\n", filesize, mime, ctime(&attr.st_mtime));
 
     write_all(connFd, headr, strlen(headr));
 
@@ -263,7 +265,7 @@ void respond_get(int connFd, char* req_obj) {
     }
 
     if ( (close(fd)) < 0 ){
-        printf("Failed to close input file. Meh.\n");
+        printf("Failed to close input file.\n");
     }    
 }
 
@@ -286,41 +288,36 @@ void serve_http(int connFd, char* rootFol) {
     Request *request = parse(buf,readRet,connFd);
 
     char headr[MAXBUF];
-    
-    if (strcasecmp(request->http_version, "HTTP/1.1") == 0) {
-            if (strcasecmp(request->http_method, "GET") == 0 &&
-                            strcasecmp(request->http_version, "HTTP/1.1") == 0) {
-                    printf("LOG from Get: %s\n", request->http_uri);
-                    respond_get(connFd, request->http_uri);
-            }
-            else if (strcasecmp(request->http_method, "HEAD") == 0 &&
-                            strcasecmp(request->http_version, "HTTP/1.1") == 0) {
-                    printf("LOG from HEAD: %s\n", request->http_uri);
-                    respond_get(connFd, request->http_uri);
-            }
-            else {
-                    sprintf(headr, 
-                                    "HTTP/1.1 501 not implemented\r\n"
-                                    "Server: ICWS\r\n"
-                                    "Connection: close\r\n");
-                    write_all(connFd, headr,strlen(headr));
-            }
+
+    if (request == NULL){
+            sprintf(headr, 
+                            "HTTP/1.1 400 bad request\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: close\r\n");
+            write_all(connFd, headr,strlen(headr));
+
+    }
+    else if (strcasecmp(request->http_version, "HTTP/1.1")){
+            sprintf(headr, 
+                            "HTTP/1.1 505 HTTP version not supported\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: close\r\n");
+            write_all(connFd, headr,strlen(headr));
+    }
+    else if (strcasecmp(request->http_method, "GET") == 0){
+            printf("LOG from Get: %s\n", request->http_uri);
+            respond_get(connFd, request->http_uri);
+    }
+    else if (strcasecmp(request->http_method, "HEAD") == 0){
+            printf("LOG from HEAD: %s\n", request->http_uri);
+            respond_get(connFd, request->http_uri);
     }
     else {
-        char headr[MAXBUF];
-        if (strcmp(request->http_version, "HTTP/1.1")){
-                sprintf(headr, 
-                        "HTTP/1.1 505 HTTP version not supported\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: close\r\n");
-        }
-        else{
-                sprintf(headr, 
-                        "HTTP/1.1 501 not implemented\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: close\r\n");
-        }
-        write_all(connFd, headr, strlen(headr));
+            sprintf(headr, 
+                            "HTTP/1.1 501 not implemented\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: close\r\n");
+            write_all(connFd, headr,strlen(headr));
     }
     free(request->headers);
     free(request);
@@ -336,6 +333,7 @@ void* conn_handler(void *args) {
     close(context->connFd);
     
     free(context); /* Done, get rid of our survival bag */
+    printf("LOG: Close connection\n");
 
     return NULL; /* Nothing meaningful to return */
 }
