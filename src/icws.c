@@ -28,7 +28,7 @@ char * dirName;
 char * getCurrentTime(){
         time_t rawTime;
         time(&rawTime);
-        return asctime(localtime(&rawTime));
+        return strdup(asctime(localtime(&rawTime)));
 }
 
 char * getExt(char * fileName){
