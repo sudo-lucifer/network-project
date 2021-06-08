@@ -5,7 +5,7 @@ from time import sleep
 #=======================================
 
 myhost = 'localhost'
-myport = 20163
+myport = 12345
 
 #=======================================
 
@@ -162,9 +162,27 @@ testOK5()
 testOK6()
 testOK7()
 '''
+def testBad():
+    print("==================501===================")
+    with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
+        # (host: str, port: int)
+        s.connect((myhost, myport))
+
+        sleep(1)
+        s.sendall(b'POST / HTTP/1.1\r')
+        sleep(0.5)
+        s.sendall(b'\n')
+        s.sendall(b'Host: cs.muic.mahidol.ac.th\r\nConnection: close\r\n')
+        sleep(2)
+        s.sendall(b'Abc: yay\r\nWow: hurray\r\n')
+        s.sendall(b'\r\n')
+
+        while data := s.recv(1024):
+            print( str(data, 'UTF-8') )
+    print("=====================================")
 
 def testBAD1():
-    print("=====================================")
+    print("==================400===================")
     with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
         # (host: str, port: int)
         s.connect((myhost, myport))
@@ -183,7 +201,7 @@ def testBAD1():
     print("=====================================")
 
 def testBAD2():
-    print("=====================================")
+    print("==================400===================")
     with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
         # (host: str, port: int)
         s.connect((myhost, myport))
@@ -201,7 +219,7 @@ def testBAD2():
 
 
 def testBAD3():
-    print("=====================================")
+    print("===============400===================")
     with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
         # (host: str, port: int)
         s.connect((myhost, myport))
@@ -221,7 +239,7 @@ def testBAD3():
 
 
 def testBAD4():
-    print("=====================================")
+    print("================400===================")
     with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
         # (host: str, port: int)
         s.connect((myhost, myport))
@@ -248,12 +266,11 @@ def testBAD4():
 
 def testBAD5():
     import sys
-    print("=====================================")
+    print("=================200===================")
     with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
         # (host: str, port: int)
         s.connect((myhost, myport))
 
-        #s.sendall(b'GET / HTTP/1.1\r\nHost: cs.muic.mahidol.ac.th\r\nConnection: close\r\n\r\n')
         info = b'HEAD / HTTP/1.1\r\nHost: cs.muic.mahidol.ac.th\r\nConnection: close\r\n\r\n'
         
         for j in [i.to_bytes(1, sys.byteorder) for i in info]:
@@ -276,12 +293,11 @@ def testBAD5():
 
 def testBAD6():
     
-    print("=====================================")
+    print("================400=================")
     with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
         # (host: str, port: int)
         s.connect((myhost, myport))
 
-        #s.sendall(b'GET / HTTP/1.1\r\nHost: cs.muic.mahidol.ac.th\r\nConnection: close\r\n\r\n')
         s.sendall(b'a a a\r\n')
         sleep(1)
         s.sendall(b'hello: asdfadsfasdfasdf\r')
@@ -298,8 +314,7 @@ def testBAD6():
 
 
 def testBAD7():
-    
-    print("=====================================")
+    print("===============505=================")
     with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
         # (host: str, port: int)
         s.connect((myhost, myport))
@@ -319,10 +334,55 @@ def testBAD7():
             print(str(data, 'UTF-8') )
     print("=====================================")
 
-#testBAD1()
-#testBAD2()
-#testBAD3()
-#testBAD4()
-#testBAD5()
-#testBAD6()
-#testBAD7()
+# 505 HTTP version not supported
+def myTest():
+    print("================200==================")
+    with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
+        # (host: str, port: int)
+        s.connect((myhost, myport))
+
+        sleep(5)
+        s.sendall(b'HEAD / HTTP/1.1')
+        sleep(1)
+        s.sendall(b'\r')
+        sleep(1)
+        s.sendall(b'\n')
+        sleep(1)
+        s.sendall(b'\r\n')
+
+        while data := s.recv(1024):
+            print( str(data, 'UTF-8') )
+    print("=====================================")
+
+
+# 200 OK
+def myTest2():
+    print("================200===================")
+    with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
+        # (host: str, port: int)
+        s.connect((myhost, myport))
+
+        sleep(1)
+        s.sendall(b'HEAD cat.jpg HTTP/1.1\r')
+        sleep(1)
+        s.sendall(b'\n\r\n')
+
+        while data := s.recv(1024):
+            print( str(data, 'UTF-8') )
+    print("=====================================")
+
+# testBAD1()
+# testBAD2()
+# testBAD3()
+# testBAD4()
+# testBAD5()
+# testBAD6()
+# testBAD7()
+# testOK1()
+# testBAD1()
+# testOK2()
+# myTest()
+myTest2()
+testBAD1()
+myTest()
+

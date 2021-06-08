@@ -282,23 +282,41 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
 }
 
 
+
 void serve_http(int connFd) {
     char * cuurentDate = getCurrentTime();
     char buf[MAXBUF];
-    // reset buffer
-    memset(buf, 0, MAXBUF);
     char lineByline[MAXBUF];
-    int readRet;
+    memset(buf, 0, MAXBUF);
+    memset(lineByline, 0, MAXBUF);
+    int readRet = 0;
     int currentRead;
 
 
-    while ((currentRead = read_line(connFd,lineByline,MAXBUF)) > 0){
-            strcat(buf, lineByline);
-            readRet += currentRead;
-            if (strcmp(lineByline, "\r\n") == 0){
-                    break;
+    while ((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
+        strcat(buf,lineByline);
+        readRet += currentRead;
+        if (readRet >= 4){
+            char checkCarraigeReturnAndNewLine[4];
+            memset(checkCarraigeReturnAndNewLine,0,4);
+            for (int i = readRet - 4; i < readRet; i++){
+                if (buf[i] == '\r')
+                {
+                    strcat(checkCarraigeReturnAndNewLine, "\r");
+                }
+                if (buf[i] == '\n')
+                {
+                    strcat(checkCarraigeReturnAndNewLine, "\n");
+                }
             }
+            if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n")){
+                break;
+            }
+            memset(checkCarraigeReturnAndNewLine,0,4);
+        }
+        memset(lineByline,0,MAXBUF);
     }
+
     printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
     Request *request = parse(buf,readRet,connFd);
 
@@ -313,8 +331,6 @@ void serve_http(int connFd) {
             write_all(connFd, headr,strlen(headr));
             free(request);
             return;
-            // return;
-
     }
     else if (strcasecmp(request->http_version, "HTTP/1.1")){
             sprintf(headr, 
@@ -340,11 +356,8 @@ void serve_http(int connFd) {
                             "Date: %s\r\n\r\n", cuurentDate);
             write_all(connFd, headr,strlen(headr));
     }
-    // printf("passed before free\n");
     free(request->headers);
-    // printf("passed headers free\n");
     free(request);
-    // printf("passed after free\n");
 }
 
 
@@ -370,7 +383,6 @@ int main(int argc, char* argv[]) {
 
                 struct sockaddr_storage clientAddr;
                 socklen_t clientLen = sizeof(struct sockaddr_storage);
-                // pthread_t threadInfo;
 
                 int connFd = accept(listenFd, (SA *) &clientAddr, &clientLen);
 
