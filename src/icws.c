@@ -380,6 +380,7 @@ int main(int argc, char* argv[]) {
 
                 // pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
                 serve_http(connFd);
+
                 close(connFd);
                 printf("===========================================================\n");
         }
