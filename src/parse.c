@@ -61,10 +61,10 @@ Request * parse(char *buffer, int size, int socketFd) {
 		}
         else {
                 // printf("passed else too \n");
-                memset(request->http_method, 0, sizeof(request->http_method));
-                memset(request->http_uri, 0, sizeof(request->http_uri));
-                memset(request->http_version, 0, sizeof(request->http_version));
-                request->header_count = 0;
+                // memset(request->http_method, 0, sizeof(request->http_method));
+                // memset(request->http_uri, 0, sizeof(request->http_uri));
+                // memset(request->http_version, 0, sizeof(request->http_version));
+                // request->header_count = 0;
                 // request->http_method = "";
                 // request->http_uri = "";
                 // request->http_version = "";
