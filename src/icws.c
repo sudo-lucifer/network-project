@@ -9,7 +9,6 @@
 #include <time.h>
 #include<unistd.h>
 #include <fcntl.h>
-#include<pthread.h>
 #include "pcsa_net.h"
 #include "parse.h"
 
@@ -18,10 +17,6 @@
 #define MAXBUF 8192
 
 typedef struct sockaddr SA;
-struct survival_bag {
-        struct sockaddr_storage clientAddr;
-        int connFd;
-};
 char * dirName;
 
 
@@ -265,7 +260,6 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
 
     write_all(connFd, headr, strlen(headr));
 
-    // ====================================
 
     if (!isHEAD){
             char buf[MAXBUF];
@@ -281,9 +275,11 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
 }
 
 
-void serve_http(int connFd, char* rootFol) {
+void serve_http(int connFd) {
     char * cuurentDate = getCurrentTime();
     char buf[MAXBUF];
+    // reset buffer
+    memset(buf, 0, MAXBUF);
     char lineByline[MAXBUF];
     int readRet;
     int currentRead;
@@ -337,27 +333,14 @@ void serve_http(int connFd, char* rootFol) {
                             "Date: %s\r\n\r\n", cuurentDate);
             write_all(connFd, headr,strlen(headr));
     }
-    printf("passed before free\n");
+    // printf("passed before free\n");
     free(request->headers);
-    printf("passed headers free\n");
+    // printf("passed headers free\n");
     free(request);
-    printf("passed after free\n");
+    // printf("passed after free\n");
 }
 
 
-void* conn_handler(void *args) {
-    struct survival_bag *context = (struct survival_bag *) args;
-    
-    pthread_detach(pthread_self());
-    serve_http(context->connFd, dirName);
-
-    close(context->connFd);
-    
-    free(context); /* Done, get rid of our survival bag */
-    printf("LOG: Close connection\n\n");
-
-    return NULL; /* Nothing meaningful to return */
-}
 
 
 int main(int argc, char* argv[]) {
@@ -381,17 +364,13 @@ int main(int argc, char* argv[]) {
 
                 struct sockaddr_storage clientAddr;
                 socklen_t clientLen = sizeof(struct sockaddr_storage);
-                pthread_t threadInfo;
+                // pthread_t threadInfo;
 
                 int connFd = accept(listenFd, (SA *) &clientAddr, &clientLen);
 
                 if (connFd < 0) { fprintf(stderr, "Failed to accept\n"); continue; }
-                struct survival_bag *context = 
-                        (struct survival_bag *) malloc(sizeof(struct survival_bag));
-                context->connFd = connFd;
 
-                memcpy(&context->clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
-
+                printf("\n===========================================================\n");
                 char hostBuf[MAXBUF], svcBuf[MAXBUF];
                 if (getnameinfo((SA *) &clientAddr, clientLen, 
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
@@ -399,7 +378,10 @@ int main(int argc, char* argv[]) {
                 else
                         printf("Connection from ?UNKNOWN?\n");
 
-                pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
+                // pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
+                serve_http(connFd);
+                close(connFd);
+                printf("===========================================================\n");
         }
 
 
