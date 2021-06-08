@@ -55,19 +55,13 @@ Request * parse(char *buffer, int size, int socketFd) {
         request->headers = (Request_header *) malloc(sizeof(Request_header)*1);
 		set_parsing_options(buf, i, request);
 
+		yyrestart(NULL);
+
 		if (yyparse() == SUCCESS) {
 		    // set_parsing_options(buf, i, request);
             return request;
 		}
         else {
-                // printf("passed else too \n");
-                // memset(request->http_method, 0, sizeof(request->http_method));
-                // memset(request->http_uri, 0, sizeof(request->http_uri));
-                // memset(request->http_version, 0, sizeof(request->http_version));
-                // request->header_count = 0;
-                // request->http_method = "";
-                // request->http_uri = "";
-                // request->http_version = "";
                 free(request->headers);
                 free(request);
         }

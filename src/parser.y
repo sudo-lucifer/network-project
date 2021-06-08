@@ -8,7 +8,7 @@
 #include "parse.h"
 
 /* Define YACCDEBUG to enable debug messages for this lex file */
-//#define YACCDEBUG
+// #define YACCDEBUG
 #define YYERROR_VERBOSE
 #ifdef YACCDEBUG
 #include <stdio.h>
@@ -251,5 +251,6 @@ void set_parsing_options(char *buf, size_t siz, Request *request)
 	parsing_buf_siz = siz;
     parsing_request = request;
 }
+
 
 void yyerror (const char *s) {fprintf (stderr, "%s\n", s);}

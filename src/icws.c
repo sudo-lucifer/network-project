@@ -347,7 +347,6 @@ int main(int argc, char* argv[]) {
         int listenFd;
         if (argc >= 3){
                 listenFd = open_listenfd(argv[2]);
-
         }
         else {
                 printf("No port specified\n");
