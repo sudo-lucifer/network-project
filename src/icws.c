@@ -308,6 +308,8 @@ void serve_http(int connFd, char* rootFol) {
                             "Connection: close\r\n"
                             "Date: %s\r\n\r\n", cuurentDate);
             write_all(connFd, headr,strlen(headr));
+            free(request);
+            return;
             // return;
 
     }

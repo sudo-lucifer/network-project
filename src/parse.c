@@ -1,4 +1,5 @@
 #include "parse.h"
+#include <string.h>
 
 /**
 * Given a char buffer returns the parsed request headers
@@ -48,19 +49,28 @@ Request * parse(char *buffer, int size, int socketFd) {
 
     //Valid End State
 	if (state == STATE_CRLFCRLF) {
+        // printf("passed from parse\n");
 		Request *request = (Request *) malloc(sizeof(Request));
         request->header_count=0;
-        //TODO: You will need to handle resizing this in parser.y
         request->headers = (Request_header *) malloc(sizeof(Request_header)*1);
 		set_parsing_options(buf, i, request);
 
 		if (yyparse() == SUCCESS) {
+		    // set_parsing_options(buf, i, request);
             return request;
 		}
-        // else {
-                // free(request->headers);
-                // free(request);
-        // }
+        else {
+                // printf("passed else too \n");
+                memset(request->http_method, 0, sizeof(request->http_method));
+                memset(request->http_uri, 0, sizeof(request->http_uri));
+                memset(request->http_version, 0, sizeof(request->http_version));
+                request->header_count = 0;
+                // request->http_method = "";
+                // request->http_uri = "";
+                // request->http_version = "";
+                free(request->headers);
+                free(request);
+        }
 	}
     //TODO Handle Malformed Requests
     printf("Parsing Failed\n");
