@@ -15,6 +15,13 @@
 
 /* Rather arbitrary. In real life, be careful with buffer overflow */
 #define MAXBUF 8192
+// define color in shell
+#define RED "\033[0;31m"
+#define BLUE "\033[0;34m"
+#define CYAN "\033[0;36m"
+#define GREEN "\033[0;32m"
+#define PURPLE "\033[0;35m"
+#define RESET "\e[0m"
 
 typedef struct sockaddr SA;
 char * dirName;
@@ -215,7 +222,7 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
     }
     strcat(loc, req_obj);
 
-    printf("File location is: %s \n", loc);
+    // printf("File location is: %s \n", loc);
     int fd = open( loc , O_RDONLY);
 
     if (fd < 0){
@@ -236,7 +243,7 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
     // find extension
     char * ext = getExt(req_obj);
     char * mime = check_mime(ext);
-    printf("mime: %s\n", mime);
+    // printf("mime: %s\n", mime);
 
     if (filesize < 0 || strcmp(mime, "null") == 0){
         sprintf(headr, 
@@ -292,7 +299,7 @@ void serve_http(int connFd) {
                     break;
             }
     }
-    printf("LOG: %s\n", buf);
+    printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
     Request *request = parse(buf,readRet,connFd);
 
     char headr[MAXBUF];
@@ -318,11 +325,11 @@ void serve_http(int connFd) {
             write_all(connFd, headr,strlen(headr));
     }
     else if (strcasecmp(request->http_method, "GET") == 0){
-            printf("LOG: GET method matched\n");
+            printf("%sLOG:%s %sGET method matched%s\n", PURPLE,RESET,BLUE,RESET);
             respond_get(connFd, request->http_uri, 0);
     }
     else if (strcasecmp(request->http_method, "HEAD") == 0){
-            printf("LOG: HEAD mrthod matched\n");
+            printf("%sLOG:%s %sHEAD method matched%s\n", PURPLE,RESET,BLUE,RESET);
             respond_get(connFd, request->http_uri, 1);
     }
     else {
@@ -349,7 +356,7 @@ int main(int argc, char* argv[]) {
                 listenFd = open_listenfd(argv[2]);
         }
         else {
-                printf("No port specified\n");
+                printf("%sNo port specified%s\n",RED,RESET);
         }
 
         if (argc >= 5){
@@ -369,19 +376,19 @@ int main(int argc, char* argv[]) {
 
                 if (connFd < 0) { fprintf(stderr, "Failed to accept\n"); continue; }
 
-                printf("\n===========================================================\n");
+                printf("\n%s===========================================================%s\n", CYAN,RESET);
                 char hostBuf[MAXBUF], svcBuf[MAXBUF];
                 if (getnameinfo((SA *) &clientAddr, clientLen, 
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
-                        printf("Connection from %s:%s\n", hostBuf, svcBuf);
+                        printf("%sConnection from%s %s%s:%s%s\n", PURPLE, RESET, GREEN,hostBuf, svcBuf, RESET);
                 else
-                        printf("Connection from ?UNKNOWN?\n");
+                        printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
                 // pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
                 serve_http(connFd);
-
                 close(connFd);
-                printf("===========================================================\n");
+                printf("%sLOG:%s %sClose connection%s\n", PURPLE, RESET,GREEN,RESET);
+                printf("\n%s===========================================================%s\n", CYAN,RESET);
         }
 
 
