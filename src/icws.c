@@ -433,8 +433,9 @@ int main(int argc, char* argv[]) {
         else{ dirName = "./"; }
 
         // initialize thread pool
-        if (argc >= 7){ printf("passed\n"); threadNum = atoi(argv[6]);  }
+        if (argc >= 7){ threadNum = atoi(argv[6]);  }
         else{ threadNum = 5; }
+
 
         pthread_t thread[threadNum];
         for (int i = 0; i < threadNum; i++)
