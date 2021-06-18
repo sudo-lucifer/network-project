@@ -10,6 +10,7 @@
 #include<unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <getopt.h>
 #include "pcsa_net.h"
 #include "parse.h"
 
@@ -426,6 +427,39 @@ int main(int argc, char* argv[]) {
         pthread_mutex_init(&mutexQueue, NULL);
         pthread_cond_init(&condQueue, NULL);
         pthread_mutex_init(&parseLock, NULL);
+        // static struct option long_options[] = {
+        //     {"port", 1, 0, 0},
+        //     {"root", 1,0,1},
+        //     {"numThreads",1,0,2},
+        //     {"timeout", 1,0,3}
+        // };
+        // int c;
+        // int option_index = 0;
+        // while ((c = getopt_long(argc, argv, "", long_options, &option_index)) != -1){
+        //     int this_option_optind = optind ? optind : 1;
+        //     switch(c)
+        //     {
+        //     case '0':
+        //         printf("passed port\n");
+        //         open_listenfd(argv[2]);
+        //         break;
+        //     case '1':
+        //         printf("root\n");
+        //         dirName = argv[4];
+        //         break;
+        //     case '2':
+        //         printf("threadNum\n");
+        //         threadNum = atoi(argv[6]);
+        //         break;
+        //     case '3':
+        //         printf("No time out yet\n");
+        //         break;
+            
+        //     default:
+        //         printf("Missing argument %s\n", long_options[option_index].name);
+        //         return 0;
+        //     }
+        // }
         if (argc >= 3){ listenFd = open_listenfd(argv[2]); }
         else { printf("%sNo port specified%s\n",RED,RESET); }
 
