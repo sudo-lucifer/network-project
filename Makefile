@@ -13,14 +13,14 @@ CPPFLAGS :=
 # compiler flags
 CFLAGS   := -g -Wall
 # DEPS = parse.h y.tab.hA
-# LIBFLAGS = -pthread
+LIBFLAGS = -pthread
 
 default: all
 all : icws
 
 # $(CC) $(LIBFLAGS) $^ -o $@
 icws: $(OBJ)
-	$(CC) $^ -o $@
+	$(CC) $(LIBFLAGS) $^ -o $@
 
 $(SRC_DIR)/lex.yy.c: $(SRC_DIR)/lexer.l
 	flex -o $@ $^

@@ -382,7 +382,9 @@ def myTest2():
 # testBAD1()
 # testOK2()
 # myTest()
-myTest2()
-testBAD1()
-myTest()
+# myTest2()
+# testBAD1()
+# myTest()
+# testOK1()
+testBAD5()
 

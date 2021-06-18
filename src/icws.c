@@ -9,12 +9,15 @@
 #include <time.h>
 #include<unistd.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include "pcsa_net.h"
 #include "parse.h"
 
 
 /* Rather arbitrary. In real life, be careful with buffer overflow */
 #define MAXBUF 8192
+#define MAXQ 256
+
 // define color in shell
 #define RED "\033[0;31m"
 #define BLUE "\033[0;34m"
@@ -24,7 +27,23 @@
 #define RESET "\e[0m"
 
 typedef struct sockaddr SA;
+typedef struct survival_bag {
+        struct sockaddr_storage clientAddr;
+        int connFd;
+} threadContent;
+
 char * dirName;
+
+// for thread pool;
+threadContent JobQueue[MAXQ];
+int JobCount = 0;
+int threadNum;
+
+pthread_mutex_t mutexQueue;
+// for parse
+pthread_mutex_t parseLock;
+// conditional variables
+pthread_cond_t condQueue;
 
 
 char * getCurrentTime(){
@@ -50,7 +69,7 @@ char * getExt(char * fileName){
 
 }
 
-char* check_mime(char* ext){
+char * check_mime(char* ext){
     if ( strcmp(ext, "html") == 0 || strcmp(ext, "htm") == 0 )
         return "text/html";
     else if ( strcmp(ext, "jpg") == 0 || strcmp(ext, "jpeg") == 0)
@@ -206,23 +225,21 @@ char* check_mime(char* ext){
     }
 
 }
-
-
+// excecute
 void respond_get(int connFd, char* req_obj, int isHEAD) {
     char * cuurentDate = getCurrentTime();
-    char loc[MAXBUF];                   // full file path
-    char headr[MAXBUF];                 // buffer for header
+    char loc[MAXBUF];                   
+    char headr[MAXBUF];                
 
-    strcpy(loc, dirName);               // loc = rootFol
-    if (strcmp(req_obj, "/") == 0){     // if input == / then req_obj = /index
+    strcpy(loc, dirName);               
+    if (strcmp(req_obj, "/") == 0){     
         req_obj = "/index.html";
     } 
-    else if (req_obj[0] != '/'){      // add '/' if first char is not '/'
+    else if (req_obj[0] != '/'){      
         strcat(loc, "/");   
     }
     strcat(loc, req_obj);
 
-    // printf("File location is: %s \n", loc);
     int fd = open( loc , O_RDONLY);
 
     if (fd < 0){
@@ -282,9 +299,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
 }
 
 
-
 void serve_http(int connFd) {
-    char * cuurentDate = getCurrentTime();
+    char * currentDate = getCurrentTime();
     char buf[MAXBUF];
     char lineByline[MAXBUF];
     memset(buf, 0, MAXBUF);
@@ -292,7 +308,7 @@ void serve_http(int connFd) {
     int readRet = 0;
     int currentRead;
 
-
+    // read request
     while ((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
         strcat(buf,lineByline);
         readRet += currentRead;
@@ -327,7 +343,7 @@ void serve_http(int connFd) {
                             "HTTP/1.1 400 bad request\r\n"
                             "Server: ICWS\r\n"
                             "Connection: close\r\n"
-                            "Date: %s\r\n\r\n", cuurentDate);
+                            "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
             free(request);
             return;
@@ -337,7 +353,7 @@ void serve_http(int connFd) {
                             "HTTP/1.1 505 HTTP version not supported\r\n"
                             "Server: ICWS\r\n"
                             "Connection: close\r\n"
-                            "Date: %s\r\n\r\n", cuurentDate);
+                            "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
     }
     else if (strcasecmp(request->http_method, "GET") == 0){
@@ -353,30 +369,81 @@ void serve_http(int connFd) {
                             "HTTP/1.1 501 not implemented\r\n"
                             "Server: ICWS\r\n"
                             "Connection: close\r\n"
-                            "Date: %s\r\n\r\n", cuurentDate);
+                            "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
     }
     free(request->headers);
     free(request);
 }
 
+void excecute(int connFd){
+    printf("%sExcecute: Receive connfd:%s %s%d%s\n", PURPLE,RESET,GREEN,connFd,RESET);
+    close(connFd);
+}
+
+void * startThread(void* args){
+    while(1){
+        pthread_mutex_lock(&mutexQueue);
+        while(JobCount == 0){
+            pthread_cond_wait(&condQueue, &mutexQueue);
+        }
+
+        threadContent request = JobQueue[0];
+        printf("Thread %d starts working\n", *((int*) args));
+        // push content up
+        for (int i = 0; i < JobCount - 1; i++){
+            JobQueue[i] = JobQueue[i + 1];
+        }
+        JobCount--;
+        printf("Job removed\n");
+        pthread_mutex_unlock(&mutexQueue);
+        // serve_http(request.connFd);
+        excecute(request.connFd);
+        close(request.connFd);
+
+    }
+
+}
+
+void addContent(int connFd, struct sockaddr_storage clientAddr){
+    pthread_mutex_lock(&mutexQueue);
+    threadContent job;
+    job.connFd = connFd;
+    memcpy(&job.clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
+    // need handle queue is full
+    JobQueue[JobCount] = job;
+    JobCount++;
+    printf("Job added from client, JobCount: %d, confd: %d\n", JobCount, job.connFd);
+    pthread_mutex_unlock(&mutexQueue);
+    pthread_cond_signal(&condQueue);
+}
 
 
 
 int main(int argc, char* argv[]) {
         int listenFd;
-        if (argc >= 3){
-                listenFd = open_listenfd(argv[2]);
-        }
-        else {
-                printf("%sNo port specified%s\n",RED,RESET);
-        }
+        // initialize mutex
+        pthread_mutex_init(&mutexQueue, NULL);
+        pthread_cond_init(&condQueue, NULL);
+        pthread_mutex_init(&parseLock, NULL);
+        if (argc >= 3){ listenFd = open_listenfd(argv[2]); }
+        else { printf("%sNo port specified%s\n",RED,RESET); }
 
-        if (argc >= 5){
-                dirName = argv[4];
-        }
-        else{
-                dirName = "./";
+        if (argc >= 5){ dirName = argv[4]; }
+        else{ dirName = "./"; }
+
+        // initialize thread pool
+        if (argc >= 7){ printf("passed\n"); threadNum = atoi(argv[6]);  }
+        else{ threadNum = 5; }
+
+        pthread_t thread[threadNum];
+        for (int i = 0; i < threadNum; i++)
+        {
+            printf("Thread %d is created and waiting\n", i);
+            if (pthread_create(&thread[i], NULL, &startThread, (void *) &i))
+            {
+                printf("%sFail to create thread at %d%s\n", RED, i, RESET);
+            }
         }
 
         for (;;) {
@@ -396,13 +463,18 @@ int main(int argc, char* argv[]) {
                 else
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
-                // pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
-                serve_http(connFd);
-                close(connFd);
-                printf("%sLOG:%s %sClose connection%s\n", PURPLE, RESET,GREEN,RESET);
+                addContent(connFd, clientAddr);
+                printf("%sLOG:%s %sContinue geting request%s\n", PURPLE, RESET,GREEN,RESET);
                 printf("\n%s===========================================================%s\n", CYAN,RESET);
         }
 
+        for (int i = 0; i < threadNum; i++) {
+            if (pthread_join(thread[i], NULL) != 0) {
+                perror("Failed to join the thread\n");
+            }
+        }
+        pthread_mutex_destroy(&mutexQueue);
+        pthread_cond_destroy(&condQueue);
 
         return 0;
 }
