@@ -383,14 +383,16 @@ void excecute(int connFd){
 }
 
 void * startThread(void* args){
+    int threadPosition = *((int *) args);
     while(1){
         pthread_mutex_lock(&mutexQueue);
+        printf("Thread %d is waiting\n", threadPosition);
         while(JobCount == 0){
             pthread_cond_wait(&condQueue, &mutexQueue);
         }
 
         threadContent request = JobQueue[0];
-        printf("Thread %d starts working\n", *((int*) args));
+        printf("Thread %d starts working\n", threadPosition);
         // push content up
         for (int i = 0; i < JobCount - 1; i++){
             JobQueue[i] = JobQueue[i + 1];
@@ -427,48 +429,45 @@ int main(int argc, char* argv[]) {
         pthread_mutex_init(&mutexQueue, NULL);
         pthread_cond_init(&condQueue, NULL);
         pthread_mutex_init(&parseLock, NULL);
-        // static struct option long_options[] = {
-        //     {"port", 1, 0, 0},
-        //     {"root", 1,0,1},
-        //     {"numThreads",1,0,2},
-        //     {"timeout", 1,0,3}
-        // };
-        // int c;
-        // int option_index = 0;
-        // while ((c = getopt_long(argc, argv, "", long_options, &option_index)) != -1){
-        //     int this_option_optind = optind ? optind : 1;
-        //     switch(c)
-        //     {
-        //     case '0':
-        //         printf("passed port\n");
-        //         open_listenfd(argv[2]);
-        //         break;
-        //     case '1':
-        //         printf("root\n");
-        //         dirName = argv[4];
-        //         break;
-        //     case '2':
-        //         printf("threadNum\n");
-        //         threadNum = atoi(argv[6]);
-        //         break;
-        //     case '3':
-        //         printf("No time out yet\n");
-        //         break;
-            
-        //     default:
-        //         printf("Missing argument %s\n", long_options[option_index].name);
-        //         return 0;
-        //     }
-        // }
-        if (argc >= 3){ listenFd = open_listenfd(argv[2]); }
-        else { printf("%sNo port specified%s\n",RED,RESET); }
+        static struct option long_options[] = {
+            {"port", 1, 0, '0'},
+            {"root", 1, 0, '1'},
+            {"numThreads", 1, 0, '2'},
+            {"timeout", 1, 0, '3'}};
+        int c;
+        int option_index = 0;
+        while (1)
+        {
+            c = getopt_long(argc, argv, "0123", long_options, &option_index);
+            if (c == -1)
+            {
+                break;
+            }
+            // int this_option_optind = optind ? optind : 1;
+            switch (c)
+            {
+            case '0':
+                printf("passed port\n");
+                listenFd = open_listenfd(argv[2]);
+                break;
+            case '1':
+                printf("root\n");
+                dirName = argv[4];
+                break;
+            case '2':
+                printf("threadNum\n");
+                threadNum = atoi(argv[6]);
+                break;
+            case '3':
+                printf("No time out yet\n");
+                break;
 
-        if (argc >= 5){ dirName = argv[4]; }
-        else{ dirName = "./"; }
-
-        // initialize thread pool
-        if (argc >= 7){ threadNum = atoi(argv[6]);  }
-        else{ threadNum = 5; }
+            default:
+                printf("Missing argument %s\n", long_options[option_index].name);
+                return 0;
+            }
+        }
+        // printf("Thread: %d, root: %s\n", threadNum,dirName);
 
 
         pthread_t thread[threadNum];
@@ -479,6 +478,7 @@ int main(int argc, char* argv[]) {
             {
                 printf("%sFail to create thread at %d%s\n", RED, i, RESET);
             }
+            sleep(0.5);
         }
 
         for (;;) {
@@ -488,7 +488,10 @@ int main(int argc, char* argv[]) {
 
                 int connFd = accept(listenFd, (SA *) &clientAddr, &clientLen);
 
-                if (connFd < 0) { fprintf(stderr, "Failed to accept\n"); continue; }
+                if (connFd < 0) { 
+                    fprintf(stderr, "Failed to accept\n"); 
+                    continue; 
+                }
 
                 printf("\n%s===========================================================%s\n", CYAN,RESET);
                 char hostBuf[MAXBUF], svcBuf[MAXBUF];
@@ -499,8 +502,8 @@ int main(int argc, char* argv[]) {
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
                 addContent(connFd, clientAddr);
-                printf("%sLOG:%s %sContinue geting request%s\n", PURPLE, RESET,GREEN,RESET);
-                printf("\n%s===========================================================%s\n", CYAN,RESET);
+                // printf("%sLOG:%s %sContinue geting request%s\n", PURPLE, RESET,GREEN,RESET);
+                // printf("\n%s===========================================================%s\n", CYAN,RESET);
         }
 
         for (int i = 0; i < threadNum; i++) {
