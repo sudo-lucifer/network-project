@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <getopt.h>
+#include <poll.h>
 #include "pcsa_net.h"
 #include "parse.h"
 
@@ -38,7 +39,8 @@ char * dirName;
 // for thread pool;
 threadContent JobQueue[MAXQ];
 int JobCount = 0;
-int threadNum;
+int threadNum = 5;
+int timeout = 10;
 
 pthread_mutex_t mutexQueue;
 // for parse
@@ -307,32 +309,78 @@ void serve_http(int connFd) {
     memset(buf, 0, MAXBUF);
     memset(lineByline, 0, MAXBUF);
     int readRet = 0;
+    int pret;
     int currentRead;
 
+    struct pollfd fds[1];
+
     // read request
-    while ((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
-        strcat(buf,lineByline);
-        readRet += currentRead;
-        if (readRet >= 4){
-            char checkCarraigeReturnAndNewLine[4];
-            memset(checkCarraigeReturnAndNewLine,0,4);
-            for (int i = readRet - 4; i < readRet; i++){
-                if (buf[i] == '\r')
-                {
-                    strcat(checkCarraigeReturnAndNewLine, "\r");
-                }
-                if (buf[i] == '\n')
-                {
-                    strcat(checkCarraigeReturnAndNewLine, "\n");
-                }
-            }
-            if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n")){
+    while (1){
+        fds[0].fd = connFd;
+        fds[0].events = 0;
+        fds[0].events |= POLLIN;
+
+        int timeOutConvert = timeout * 1000;
+
+        pret = poll(fds,1,timeOutConvert);
+
+        if (!pret){
+            printf("%sLOG:%s %sTime out%s\n", PURPLE,RESET,RED,RESET);
+
+        }
+        else{
+            currentRead = read(connFd, lineByline, MAXBUF);
+            if (currentRead <= 0)
+            {
                 break;
             }
-            memset(checkCarraigeReturnAndNewLine,0,4);
+            if (readRet >= 4)
+            {
+                char checkCarraigeReturnAndNewLine[4];
+                memset(checkCarraigeReturnAndNewLine, 0, 4);
+                for (int i = readRet - 4; i < readRet; i++)
+                {
+                    if (buf[i] == '\r')
+                    {
+                        strcat(checkCarraigeReturnAndNewLine, "\r");
+                    }
+                    if (buf[i] == '\n')
+                    {
+                        strcat(checkCarraigeReturnAndNewLine, "\n");
+                    }
+                }
+                if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n"))
+                {
+                    break;
+                }
+                memset(checkCarraigeReturnAndNewLine, 0, 4);
+            }
+            memset(lineByline, 0, MAXBUF);
         }
-        memset(lineByline,0,MAXBUF);
     }
+    // while ((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
+    //     strcat(buf,lineByline);
+    //     readRet += currentRead;
+    //     if (readRet >= 4){
+    //         char checkCarraigeReturnAndNewLine[4];
+    //         memset(checkCarraigeReturnAndNewLine,0,4);
+    //         for (int i = readRet - 4; i < readRet; i++){
+    //             if (buf[i] == '\r')
+    //             {
+    //                 strcat(checkCarraigeReturnAndNewLine, "\r");
+    //             }
+    //             if (buf[i] == '\n')
+    //             {
+    //                 strcat(checkCarraigeReturnAndNewLine, "\n");
+    //             }
+    //         }
+    //         if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n")){
+    //             break;
+    //         }
+    //         memset(checkCarraigeReturnAndNewLine,0,4);
+    //     }
+    //     memset(lineByline,0,MAXBUF);
+    // }
 
     printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
     Request *request = parse(buf,readRet,connFd);
@@ -377,10 +425,6 @@ void serve_http(int connFd) {
     free(request);
 }
 
-void excecute(int connFd){
-    printf("%sExcecute: Receive connfd:%s %s%d%s\n", PURPLE,RESET,GREEN,connFd,RESET);
-    close(connFd);
-}
 
 void * startThread(void* args){
     int threadPosition = *((int *) args);
@@ -401,7 +445,7 @@ void * startThread(void* args){
         printf("Job removed\n");
         pthread_mutex_unlock(&mutexQueue);
         // serve_http(request.connFd);
-        excecute(request.connFd);
+        serve_http(request.connFd);
         close(request.connFd);
 
     }
@@ -460,6 +504,7 @@ int main(int argc, char* argv[]) {
                 break;
             case '3':
                 printf("No time out yet\n");
+                timeout = atoi(argv[8]);
                 break;
 
             default:
