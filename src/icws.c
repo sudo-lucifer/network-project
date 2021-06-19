@@ -325,7 +325,14 @@ void serve_http(int connFd) {
         pret = poll(fds,1,timeOutConvert);
 
         if (!pret){
+            char headr[MAXBUF];
             printf("%sLOG:%s %sTime out%s\n", PURPLE,RESET,RED,RESET);
+            sprintf(headr, 
+                            "HTTP/1.1 408 Connection Time out\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: close\r\n"
+                            "Date: %s\r\n\r\n", currentDate);
+            write_all(connFd, headr,strlen(headr));
             return;
         }
         else if (pret < 0){
