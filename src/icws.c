@@ -40,7 +40,7 @@ char * dirName;
 threadContent JobQueue[MAXQ];
 int JobCount = 0;
 int threadNum = 5;
-int timeout = 10;
+int timeout = 0;
 
 pthread_mutex_t mutexQueue;
 // for parse
@@ -326,6 +326,7 @@ void serve_http(int connFd) {
 
         if (!pret){
             printf("%sLOG:%s %sTime out%s\n", PURPLE,RESET,RED,RESET);
+            return;
 
         }
         else{
@@ -334,6 +335,8 @@ void serve_http(int connFd) {
             {
                 break;
             }
+            strcat(buf, lineByline);
+            readRet += currentRead;
             if (readRet >= 4)
             {
                 char checkCarraigeReturnAndNewLine[4];
