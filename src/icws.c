@@ -327,7 +327,10 @@ void serve_http(int connFd) {
         if (!pret){
             printf("%sLOG:%s %sTime out%s\n", PURPLE,RESET,RED,RESET);
             return;
-
+        }
+        else if (pret < 0){
+            printf("%sLOG:%s %spoll() fail%s\n", PURPLE,RESET,RED,RESET);
+            return;
         }
         else{
             currentRead = read(connFd, lineByline, MAXBUF);
@@ -361,32 +364,11 @@ void serve_http(int connFd) {
             memset(lineByline, 0, MAXBUF);
         }
     }
-    // while ((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
-    //     strcat(buf,lineByline);
-    //     readRet += currentRead;
-    //     if (readRet >= 4){
-    //         char checkCarraigeReturnAndNewLine[4];
-    //         memset(checkCarraigeReturnAndNewLine,0,4);
-    //         for (int i = readRet - 4; i < readRet; i++){
-    //             if (buf[i] == '\r')
-    //             {
-    //                 strcat(checkCarraigeReturnAndNewLine, "\r");
-    //             }
-    //             if (buf[i] == '\n')
-    //             {
-    //                 strcat(checkCarraigeReturnAndNewLine, "\n");
-    //             }
-    //         }
-    //         if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n")){
-    //             break;
-    //         }
-    //         memset(checkCarraigeReturnAndNewLine,0,4);
-    //     }
-    //     memset(lineByline,0,MAXBUF);
-    // }
 
     printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
+    pthread_mutex_lock(&parseLock);
     Request *request = parse(buf,readRet,connFd);
+    pthread_mutex_unlock(&parseLock);
 
     char headr[MAXBUF];
 
