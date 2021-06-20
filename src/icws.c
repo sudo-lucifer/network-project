@@ -48,6 +48,10 @@ pthread_mutex_t parseLock;
 // conditional variables
 pthread_cond_t condQueue;
 
+char * getAliveHeader(int status){
+    if (!status){ return strdup("close");}
+    else{ return strdup("keep-alive"); }
+}
 
 char * getCurrentTime(){
         time_t rawTime;
@@ -229,10 +233,11 @@ char * check_mime(char* ext){
 
 }
 // excecute
-void respond_get(int connFd, char* req_obj, int isHEAD) {
+void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     char * cuurentDate = getCurrentTime();
     char loc[MAXBUF];                   
     char headr[MAXBUF];                
+    char * aliveHeader = getAliveHeader(alive);
 
     strcpy(loc, dirName);               
     if (strcmp(req_obj, "/") == 0){     
@@ -249,8 +254,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
         sprintf(headr, 
                 "HTTP/1.1 404 not found\r\n"
                 "Server: ICWS\r\n"
-                "Connection: close\r\n"
-                "Date: %s\r\n\r\n", cuurentDate);
+                "Connection: %s\r\n"
+                "Date: %s\r\n\r\n", aliveHeader,cuurentDate);
         write_all(connFd, headr, strlen(headr));
         return;
     }
@@ -269,8 +274,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
         sprintf(headr, 
                         "HTTP/1.1 400 Bad Request\r\n"
                         "Server: ICWS\r\n"
-                        "Connection: close\r\n"
-                        "Date: %s\r\n\r\n", cuurentDate);
+                        "Connection: %s\r\n"
+                        "Date: %s\r\n\r\n", aliveHeader, cuurentDate);
         write_all(connFd, headr , strlen(headr) );
         close(fd);
         return;
@@ -279,11 +284,11 @@ void respond_get(int connFd, char* req_obj, int isHEAD) {
     sprintf(headr, 
             "HTTP/1.1 200 OK\r\n"
             "Server: Micro\r\n"
-            "Connection: close\r\n"
+            "Connection: %s\r\n"
             "Content-length: %lu\r\n"
             "Content-type: %s\r\n"
             "Last modified date: %s"
-            "Date: %s\r\n\r\n", filesize, mime, modTime, cuurentDate);
+            "Date: %s\r\n\r\n", aliveHeader, filesize, mime, modTime, cuurentDate);
 
     write_all(connFd, headr, strlen(headr));
 
@@ -306,16 +311,18 @@ void serve_http(int connFd) {
     char * currentDate = getCurrentTime();
     char buf[MAXBUF];
     char lineByline[MAXBUF];
-    memset(buf, 0, MAXBUF);
-    memset(lineByline, 0, MAXBUF);
     int readRet = 0;
     int pret;
     int currentRead;
+    int keep_alive = 1;
 
     struct pollfd fds[1];
 
     // read request
-    while (1){
+    while (keep_alive){
+        memset(buf, 0, MAXBUF);
+        readRet = 0;
+        memset(lineByline, 0, MAXBUF);
         fds[0].fd = connFd;
         fds[0].events = 0;
         fds[0].events |= POLLIN;
@@ -324,13 +331,14 @@ void serve_http(int connFd) {
 
         pret = poll(fds,1,timeOutConvert);
 
+
         if (!pret){
             char headr[MAXBUF];
             printf("%sLOG:%s %sTime out%s\n", PURPLE,RESET,RED,RESET);
             sprintf(headr, 
                             "HTTP/1.1 408 Connection Time out\r\n"
                             "Server: ICWS\r\n"
-                            "Connection: close\r\n"
+                            "Connection: keep-alive\r\n"
                             "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
             return;
@@ -340,81 +348,90 @@ void serve_http(int connFd) {
             return;
         }
         else{
-            currentRead = read(connFd, lineByline, MAXBUF);
-            if (currentRead <= 0)
-            {
-                break;
-            }
-            strcat(buf, lineByline);
-            readRet += currentRead;
-            if (readRet >= 4)
-            {
-                char checkCarraigeReturnAndNewLine[4];
-                memset(checkCarraigeReturnAndNewLine, 0, 4);
-                for (int i = readRet - 4; i < readRet; i++)
+            while((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
+                strcat(buf, lineByline);
+                readRet += currentRead;
+                if (readRet >= 4)
                 {
-                    if (buf[i] == '\r')
+                    char checkCarraigeReturnAndNewLine[4];
+                    memset(checkCarraigeReturnAndNewLine, 0, 4);
+                    for (int i = readRet - 4; i < readRet; i++)
                     {
-                        strcat(checkCarraigeReturnAndNewLine, "\r");
+                        if (buf[i] == '\r')
+                        {
+                            strcat(checkCarraigeReturnAndNewLine, "\r");
+                        }
+                        if (buf[i] == '\n')
+                        {
+                            strcat(checkCarraigeReturnAndNewLine, "\n");
+                        }
                     }
-                    if (buf[i] == '\n')
+                    if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n"))
                     {
-                        strcat(checkCarraigeReturnAndNewLine, "\n");
+                        break;
                     }
+                    memset(checkCarraigeReturnAndNewLine, 0, 4);
                 }
-                if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n"))
-                {
-                    break;
-                }
-                memset(checkCarraigeReturnAndNewLine, 0, 4);
+                memset(lineByline, 0, MAXBUF);
             }
-            memset(lineByline, 0, MAXBUF);
+            printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
+            pthread_mutex_lock(&parseLock);
+            Request *request = parse(buf, readRet, connFd);
+            pthread_mutex_unlock(&parseLock);
+            for (int i = 0; i < request->header_count; i++)
+            {
+                if (strcasecmp(request->headers[i].header_name, "connection") == 0){
+                    if (strcasecmp(request->headers[i].header_value, "close") == 0){ keep_alive = 0; }
+                }
+            }
+            char * alive = getAliveHeader(keep_alive);
+            char headr[MAXBUF];
+            if (request == NULL)
+            {
+                sprintf(headr,
+                        "HTTP/1.1 400 bad request\r\n"
+                        "Server: ICWS\r\n"
+                        "Connection: %s\r\n"
+                        "Date: %s\r\n\r\n",
+                        alive, currentDate);
+                write_all(connFd, headr, strlen(headr));
+                free(request);
+                // return;
+            }
+            else if (strcasecmp(request->http_version, "HTTP/1.1"))
+            {
+                sprintf(headr,
+                        "HTTP/1.1 505 HTTP version not supported\r\n"
+                        "Server: ICWS\r\n"
+                        "Connection: %s\r\n"
+                        "Date: %s\r\n\r\n",
+                        alive,currentDate);
+                write_all(connFd, headr, strlen(headr));
+            }
+            else if (strcasecmp(request->http_method, "GET") == 0)
+            {
+                printf("%sLOG:%s %sGET method matched%s\n", PURPLE, RESET, BLUE, RESET);
+                respond_get(connFd, request->http_uri, 0, keep_alive);
+            }
+            else if (strcasecmp(request->http_method, "HEAD") == 0)
+            {
+                printf("%sLOG:%s %sHEAD method matched%s\n", PURPLE, RESET, BLUE, RESET);
+                respond_get(connFd, request->http_uri, 1, keep_alive);
+            }
+            else
+            {
+                sprintf(headr,
+                        "HTTP/1.1 501 not implemented\r\n"
+                        "Server: ICWS\r\n"
+                        "Connection: %s\r\n"
+                        "Date: %s\r\n\r\n",
+                        alive,currentDate);
+                write_all(connFd, headr, strlen(headr));
+            }
+            free(request->headers);
+            free(request);
         }
     }
-
-    printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
-    pthread_mutex_lock(&parseLock);
-    Request *request = parse(buf,readRet,connFd);
-    pthread_mutex_unlock(&parseLock);
-
-    char headr[MAXBUF];
-
-    if (request == NULL){
-            sprintf(headr, 
-                            "HTTP/1.1 400 bad request\r\n"
-                            "Server: ICWS\r\n"
-                            "Connection: close\r\n"
-                            "Date: %s\r\n\r\n", currentDate);
-            write_all(connFd, headr,strlen(headr));
-            free(request);
-            return;
-    }
-    else if (strcasecmp(request->http_version, "HTTP/1.1")){
-            sprintf(headr, 
-                            "HTTP/1.1 505 HTTP version not supported\r\n"
-                            "Server: ICWS\r\n"
-                            "Connection: close\r\n"
-                            "Date: %s\r\n\r\n", currentDate);
-            write_all(connFd, headr,strlen(headr));
-    }
-    else if (strcasecmp(request->http_method, "GET") == 0){
-            printf("%sLOG:%s %sGET method matched%s\n", PURPLE,RESET,BLUE,RESET);
-            respond_get(connFd, request->http_uri, 0);
-    }
-    else if (strcasecmp(request->http_method, "HEAD") == 0){
-            printf("%sLOG:%s %sHEAD method matched%s\n", PURPLE,RESET,BLUE,RESET);
-            respond_get(connFd, request->http_uri, 1);
-    }
-    else {
-            sprintf(headr, 
-                            "HTTP/1.1 501 not implemented\r\n"
-                            "Server: ICWS\r\n"
-                            "Connection: close\r\n"
-                            "Date: %s\r\n\r\n", currentDate);
-            write_all(connFd, headr,strlen(headr));
-    }
-    free(request->headers);
-    free(request);
 }
 
 
@@ -483,19 +500,19 @@ int main(int argc, char* argv[]) {
             switch (c)
             {
             case '0':
-                printf("passed port\n");
+                // printf("passed port\n");
                 listenFd = open_listenfd(argv[2]);
                 break;
             case '1':
-                printf("root\n");
+                // printf("root\n");
                 dirName = argv[4];
                 break;
             case '2':
-                printf("threadNum\n");
+                // printf("threadNum\n");
                 threadNum = atoi(argv[6]);
                 break;
             case '3':
-                printf("No time out yet\n");
+                // printf("No time out yet\n");
                 timeout = atoi(argv[8]);
                 break;
 
