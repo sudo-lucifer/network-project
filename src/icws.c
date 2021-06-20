@@ -378,10 +378,16 @@ void serve_http(int connFd) {
             pthread_mutex_lock(&parseLock);
             Request *request = parse(buf, readRet, connFd);
             pthread_mutex_unlock(&parseLock);
-            for (int i = 0; i < request->header_count; i++)
-            {
-                if (strcasecmp(request->headers[i].header_name, "connection") == 0){
-                    if (strcasecmp(request->headers[i].header_value, "close") == 0){ keep_alive = 0; }
+            if (request != NULL){
+                for (int i = 0; i < request->header_count; i++)
+                {
+                    if (strcasecmp(request->headers[i].header_name, "connection") == 0)
+                    {
+                        if (strcasecmp(request->headers[i].header_value, "close") == 0)
+                        {
+                            keep_alive = 0;
+                        }
+                    }
                 }
             }
             char * alive = getAliveHeader(keep_alive);
@@ -396,6 +402,7 @@ void serve_http(int connFd) {
                         alive, currentDate);
                 write_all(connFd, headr, strlen(headr));
                 free(request);
+                continue;
                 // return;
             }
             else if (strcasecmp(request->http_version, "HTTP/1.1"))
@@ -436,22 +443,23 @@ void serve_http(int connFd) {
 
 
 void * startThread(void* args){
-    int threadPosition = *((int *) args);
+    // int threadPosition = *((int *) args);
     while(1){
+        // printf("Thread %d is waiting\n", threadPosition);
         pthread_mutex_lock(&mutexQueue);
-        printf("Thread %d is waiting\n", threadPosition);
+        // printf("Thread %d is waiting\n", threadPosition);
         while(JobCount == 0){
             pthread_cond_wait(&condQueue, &mutexQueue);
         }
 
         threadContent request = JobQueue[0];
-        printf("Thread %d starts working\n", threadPosition);
+        // printf("Thread %d starts working\n", threadPosition);
         // push content up
         for (int i = 0; i < JobCount - 1; i++){
             JobQueue[i] = JobQueue[i + 1];
         }
         JobCount--;
-        printf("Job removed\n");
+        // printf("Job removed\n");
         pthread_mutex_unlock(&mutexQueue);
         // serve_http(request.connFd);
         serve_http(request.connFd);
@@ -469,7 +477,8 @@ void addContent(int connFd, struct sockaddr_storage clientAddr){
     // need handle queue is full
     JobQueue[JobCount] = job;
     JobCount++;
-    printf("Job added from client, JobCount: %d, confd: %d\n", JobCount, job.connFd);
+    printf("%sLOG:%s %sJob added from client, JobCount:%s %s%d%s, %sconfd:%s %s%d%s\n", PURPLE,RESET, GREEN, RESET, CYAN,JobCount,RESET,
+    GREEN,RESET, CYAN, job.connFd, RESET);
     pthread_mutex_unlock(&mutexQueue);
     pthread_cond_signal(&condQueue);
 }
@@ -527,13 +536,15 @@ int main(int argc, char* argv[]) {
         pthread_t thread[threadNum];
         for (int i = 0; i < threadNum; i++)
         {
-            printf("Thread %d is created and waiting\n", i);
+            // printf("Thread %d is created and waiting\n", i);
             if (pthread_create(&thread[i], NULL, &startThread, (void *) &i))
             {
                 printf("%sFail to create thread at %d%s\n", RED, i, RESET);
             }
             sleep(0.5);
         }
+
+        printf("%sServer boosted%s\n", PURPLE,RESET);
 
         for (;;) {
 
