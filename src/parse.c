@@ -59,12 +59,13 @@ Request * parse(char *buffer, int size, int socketFd) {
 
 		if (yyparse() == SUCCESS) {
 		    // set_parsing_options(buf, i, request);
-            return request;
+		    return request;
 		}
-        else {
-                free(request->headers);
-                free(request);
-        }
+		else
+		{
+			free(request->headers);
+			free(request);
+		}
 	}
     //TODO Handle Malformed Requests
     printf("Parsing Failed\n");
