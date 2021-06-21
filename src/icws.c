@@ -348,12 +348,15 @@ void serve_http(int connFd) {
             return;
         }
         else{
+            // printf("passsed\n");
             while((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
+                // printf("%d\n", currentRead);
                 strcat(buf, lineByline);
+                // printf("passsed\n");
                 readRet += currentRead;
                 if (readRet >= 4)
                 {
-                    char checkCarraigeReturnAndNewLine[4];
+                    char checkCarraigeReturnAndNewLine[5];
                     memset(checkCarraigeReturnAndNewLine, 0, 4);
                     for (int i = readRet - 4; i < readRet; i++)
                     {
@@ -370,11 +373,12 @@ void serve_http(int connFd) {
                     {
                         break;
                     }
-                    memset(checkCarraigeReturnAndNewLine, 0, 4);
+                    memset(checkCarraigeReturnAndNewLine, 0, 5);
                 }
+                // printf("finish loop\n");
                 memset(lineByline, 0, MAXBUF);
             }
-            printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
+            // printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
             pthread_mutex_lock(&parseLock);
             Request *request = parse(buf, readRet, connFd);
             pthread_mutex_unlock(&parseLock);
@@ -407,7 +411,7 @@ void serve_http(int connFd) {
                 continue;
                 // return;
             }
-            else if (strcasecmp(request->http_version, "HTTP/1.1"))
+            else if (strcasecmp(request->http_version, "HTTP/1.1") && strcasecmp(request->http_version, "HTTP/1.0"))
             {
                 sprintf(headr,
                         "HTTP/1.1 505 HTTP version not supported\r\n"
@@ -419,12 +423,12 @@ void serve_http(int connFd) {
             }
             else if (strcasecmp(request->http_method, "GET") == 0)
             {
-                printf("%sLOG:%s %sGET method matched%s\n", PURPLE, RESET, BLUE, RESET);
+                // printf("%sLOG:%s %sGET method matched%s\n", PURPLE, RESET, BLUE, RESET);
                 respond_get(connFd, request->http_uri, 0, keep_alive);
             }
             else if (strcasecmp(request->http_method, "HEAD") == 0)
             {
-                printf("%sLOG:%s %sHEAD method matched%s\n", PURPLE, RESET, BLUE, RESET);
+                // printf("%sLOG:%s %sHEAD method matched%s\n", PURPLE, RESET, BLUE, RESET);
                 respond_get(connFd, request->http_uri, 1, keep_alive);
             }
             else
@@ -479,8 +483,8 @@ void addContent(int connFd, struct sockaddr_storage clientAddr){
     // need handle queue is full
     JobQueue[JobCount] = job;
     JobCount++;
-    printf("%sLOG:%s %sJob added from client, JobCount:%s %s%d%s, %sconfd:%s %s%d%s\n", PURPLE,RESET, GREEN, RESET, CYAN,JobCount,RESET,
-    GREEN,RESET, CYAN, job.connFd, RESET);
+    // printf("%sLOG:%s %sJob added from client, JobCount:%s %s%d%s, %sconfd:%s %s%d%s\n", PURPLE,RESET, GREEN, RESET, CYAN,JobCount,RESET,
+    // GREEN,RESET, CYAN, job.connFd, RESET);
     pthread_mutex_unlock(&mutexQueue);
     pthread_cond_signal(&condQueue);
 }
@@ -560,12 +564,11 @@ int main(int argc, char* argv[]) {
                     continue; 
                 }
 
-                printf("\n%s===========================================================%s\n", CYAN,RESET);
+                // printf("\n%s===========================================================%s\n", CYAN,RESET);
                 char hostBuf[MAXBUF], svcBuf[MAXBUF];
                 if (getnameinfo((SA *) &clientAddr, clientLen, 
-                                        hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
-                        printf("%sConnection from%s %s%s:%s%s\n", PURPLE, RESET, GREEN,hostBuf, svcBuf, RESET);
-                else
+                                        hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
+                        // printf("%sConnection from%s %s%s:%s%s\n", PURPLE, RESET, GREEN,hostBuf, svcBuf, RESET);
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
                 addContent(connFd, clientAddr);
