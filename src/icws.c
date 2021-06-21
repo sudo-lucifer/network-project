@@ -283,7 +283,7 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
 
     sprintf(headr, 
             "HTTP/1.1 200 OK\r\n"
-            "Server: Micro\r\n"
+            "Server: ICWS\r\n"
             "Connection: %s\r\n"
             "Content-length: %lu\r\n"
             "Content-type: %s\r\n"
@@ -338,7 +338,7 @@ void serve_http(int connFd) {
             sprintf(headr, 
                             "HTTP/1.1 408 Connection Time out\r\n"
                             "Server: ICWS\r\n"
-                            "Connection: keep-alive\r\n"
+                            "Connection: close\r\n"
                             "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
             return;
@@ -378,14 +378,16 @@ void serve_http(int connFd) {
             pthread_mutex_lock(&parseLock);
             Request *request = parse(buf, readRet, connFd);
             pthread_mutex_unlock(&parseLock);
+            keep_alive = 0;
             if (request != NULL){
                 for (int i = 0; i < request->header_count; i++)
                 {
                     if (strcasecmp(request->headers[i].header_name, "connection") == 0)
                     {
-                        if (strcasecmp(request->headers[i].header_value, "close") == 0)
+                        if (strcasecmp(request->headers[i].header_value, "keep-alive") == 0)
                         {
-                            keep_alive = 0;
+                            keep_alive = 1;
+                            break;
                         }
                     }
                 }
