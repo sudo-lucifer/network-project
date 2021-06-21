@@ -1,8 +1,18 @@
 #!/bin/bash
+# echo $2
+# echo $3
+# echo $4
 
 if [ "$1" == "server" ];
 then
-    ./icws --port 12345 --root $2
+    if [ "$4" != "" ]; then
+        ./icws --port 12345 --root $2 --numThreads $3 --timeout $4
+    elif [ "$3" != "" ]; then
+        ./icws --port 12345 --root $2 --numThreads $3 --timeout 1000
+    elif [ "$2" != "" ]; then
+        ./icws --port 12345 --root $2 --numThreads 10 --timeout 1000 
+    fi
+
 elif [ "$1" == "telnet" ];
 then
     telnet localhost 12345
