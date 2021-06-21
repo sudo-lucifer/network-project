@@ -1,0 +1,75 @@
+commit 44a7167f4f7bcfb99a63db1bc8b5e0094b645211
+Author: Krittin <krittin.niu@stuent.mahidol.edu>
+Date:   Mon Jun 21 17:34:43 2021 +0700
+
+    Fix connection alive
+
+diff --git a/run.sh b/run.sh
+index f5e2e73..ac17584 100755
+--- a/run.sh
++++ b/run.sh
+@@ -6,18 +6,18 @@
+ if [ "$1" == "server" ];
+ then
+     if [ "$4" != "" ]; then
+-        ./icws --port 12345 --root $2 --numThreads $3 --timeout $4
++        ./icws --port 28581 --root $2 --numThreads $3 --timeout $4
+     elif [ "$3" != "" ]; then
+-        ./icws --port 12345 --root $2 --numThreads $3 --timeout 1000
++        ./icws --port 28581 --root $2 --numThreads $3 --timeout 1000
+     elif [ "$2" != "" ]; then
+-        ./icws --port 12345 --root $2 --numThreads 10 --timeout 1000 
++        ./icws --port 28581 --root $2 --numThreads 10 --timeout 1000 
+     fi
+ 
+ elif [ "$1" == "telnet" ];
+ then
+-    telnet localhost 12345
++    telnet localhost 28581
+ elif [ "$1" == "netcat" ];
+ then 
+-    netcat localhost 12345 < $2
++    netcat localhost 28581 < $2
+ fi
+ 
+diff --git a/src/icws.c b/src/icws.c
+index caca60e..66883de 100644
+--- a/src/icws.c
++++ b/src/icws.c
+@@ -283,7 +283,7 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
+ 
+     sprintf(headr, 
+             "HTTP/1.1 200 OK\r\n"
+-            "Server: Micro\r\n"
++            "Server: ICWS\r\n"
+             "Connection: %s\r\n"
+             "Content-length: %lu\r\n"
+             "Content-type: %s\r\n"
+@@ -338,7 +338,7 @@ void serve_http(int connFd) {
+             sprintf(headr, 
+                             "HTTP/1.1 408 Connection Time out\r\n"
+                             "Server: ICWS\r\n"
+-                            "Connection: keep-alive\r\n"
++                            "Connection: close\r\n"
+                             "Date: %s\r\n\r\n", currentDate);
+             write_all(connFd, headr,strlen(headr));
+             return;
+@@ -378,14 +378,16 @@ void serve_http(int connFd) {
+             pthread_mutex_lock(&parseLock);
+             Request *request = parse(buf, readRet, connFd);
+             pthread_mutex_unlock(&parseLock);
++            keep_alive = 0;
+             if (request != NULL){
+                 for (int i = 0; i < request->header_count; i++)
+                 {
+                     if (strcasecmp(request->headers[i].header_name, "connection") == 0)
+                     {
+-                        if (strcasecmp(request->headers[i].header_value, "close") == 0)
++                        if (strcasecmp(request->headers[i].header_value, "keep-alive") == 0)
+                         {
+-                            keep_alive = 0;
++                            keep_alive = 1;
++                            break;
+                         }
+                     }
+                 }
