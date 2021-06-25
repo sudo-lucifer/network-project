@@ -5,7 +5,7 @@ from time import sleep
 #=======================================
 
 myhost = 'localhost'
-myport = 12345
+myport = 28581
 
 #=======================================
 
@@ -386,5 +386,29 @@ def myTest2():
 # testBAD1()
 # myTest()
 # testOK1()
-testBAD5()
+# testBAD5()
+print("=====================================")
+with sk.socket(sk.AF_INET, sk.SOCK_STREAM) as s:
 
+    myhost = 'localhost'
+    myport = 28581
+    #myport = 20163
+    # (host: str, port: int)
+    
+    s.connect((myhost, myport))
+
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'HEAD / Http/1.1\r\nConnection: keep-alive\r\n\r\n')
+    s.sendall(b'abc\r\n\r\n')
+    # s.sendall(b'HEAD / Http/1.1\r\nConnection: close\r\n\r\n')
+    while data := s.recv(1024):
+        print( str(data, 'UTF-8') )
+print("=====================================")

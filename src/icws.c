@@ -36,9 +36,10 @@ typedef struct survival_bag {
 
 char * dirName;
 
-// for thread pool;
+// for thread pool. not thread save but fix by using mutex
 threadContent JobQueue[MAXQ];
 int JobCount = 0;
+// read only variables
 int threadNum = 5;
 int timeout = 0;
 
@@ -316,14 +317,17 @@ void serve_http(int connFd) {
     int pret;
     int currentRead;
     int keep_alive = 1;
+    int shouldRead = 1;
 
     struct pollfd fds[1];
 
     // read request
     while (keep_alive){
-        memset(buf, 0, bufSize);
-        readRet = 0;
-        memset(lineByline, 0, MAXBUF);
+        if (shouldRead){
+            memset(buf, 0, bufSize);
+            readRet = 0;
+            memset(lineByline, 0, MAXBUF);
+        }
         fds[0].fd = connFd;
         fds[0].events = 0;
         fds[0].events |= POLLIN;
@@ -374,70 +378,79 @@ void serve_http(int connFd) {
                 }
                 memset(lineByline, 0, MAXBUF);
             }
-            // at most one thread can use parse function at a time
-            pthread_mutex_lock(&parseLock);
-            Request *request = parse(buf, readRet, connFd);
-            pthread_mutex_unlock(&parseLock);
-            // close read function after sending request if there is no header "Connection: keep-alive"
-            keep_alive = 0;
-            if (request != NULL){
-                for (int i = 0; i < request->header_count; i++)
+            char * ptr = strstr(buf, "\r\n\r\n");
+            while (ptr != NULL){
+                // at most one thread can use parse function at a time
+                pthread_mutex_lock(&parseLock);
+                Request *request = parse(buf, readRet, connFd);
+                pthread_mutex_unlock(&parseLock);
+                // close read function after sending request if there is no header "Connection: keep-alive"
+                keep_alive = 0;
+                if (request != NULL)
                 {
-                    if (strcasecmp(request->headers[i].header_name, "connection") == 0)
+                    for (int i = 0; i < request->header_count; i++)
                     {
-                        if (strcasecmp(request->headers[i].header_value, "keep-alive") == 0)
+                        if (strcasecmp(request->headers[i].header_name, "connection") == 0)
                         {
-                            keep_alive = 1;
-                            break;
+                            if (strcasecmp(request->headers[i].header_value, "keep-alive") == 0)
+                            {
+                                keep_alive = 1;
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            // for response header
-            char * alive = getAliveHeader(keep_alive);
-            char headr[MAXBUF];
-            if (request == NULL)
-            {
-                sprintf(headr,
-                        "HTTP/1.1 400 bad request\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: %s\r\n"
-                        "Date: %s\r\n\r\n",
-                        alive, currentDate);
-                write_all(connFd, headr, strlen(headr));
+                // for response header
+                char *alive = getAliveHeader(keep_alive);
+                char headr[MAXBUF];
+                if (request == NULL)
+                {
+                    sprintf(headr,
+                            "HTTP/1.1 400 bad request\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: %s\r\n"
+                            "Date: %s\r\n\r\n",
+                            alive, currentDate);
+                    write_all(connFd, headr, strlen(headr));
+                    free(request);
+                    break;
+                }
+                else if (strcasecmp(request->http_version, "HTTP/1.1") && strcasecmp(request->http_version, "HTTP/1.0"))
+                {
+                    sprintf(headr,
+                            "HTTP/1.1 505 HTTP version not supported\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: %s\r\n"
+                            "Date: %s\r\n\r\n",
+                            alive, currentDate);
+                    write_all(connFd, headr, strlen(headr));
+                }
+                else if (strcasecmp(request->http_method, "GET") == 0)
+                {
+                    respond_get(connFd, request->http_uri, 0, keep_alive);
+                }
+                else if (strcasecmp(request->http_method, "HEAD") == 0)
+                {
+                    respond_get(connFd, request->http_uri, 1, keep_alive);
+                }
+                else
+                {
+                    sprintf(headr,
+                            "HTTP/1.1 501 not implemented\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: %s\r\n"
+                            "Date: %s\r\n\r\n",
+                            alive, currentDate);
+                    write_all(connFd, headr, strlen(headr));
+                }
+                free(request->headers);
                 free(request);
-                continue;
+                // deep copy pointer
+                ptr = strdup(ptr);
+                memset(buf, 0, bufSize);
+                strcat(buf, ptr + 4);
+                ptr = strstr(buf, "\r\n\r\n");
             }
-            else if (strcasecmp(request->http_version, "HTTP/1.1") && strcasecmp(request->http_version, "HTTP/1.0"))
-            {
-                sprintf(headr,
-                        "HTTP/1.1 505 HTTP version not supported\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: %s\r\n"
-                        "Date: %s\r\n\r\n",
-                        alive,currentDate);
-                write_all(connFd, headr, strlen(headr));
-            }
-            else if (strcasecmp(request->http_method, "GET") == 0)
-            {
-                respond_get(connFd, request->http_uri, 0, keep_alive);
-            }
-            else if (strcasecmp(request->http_method, "HEAD") == 0)
-            {
-                respond_get(connFd, request->http_uri, 1, keep_alive);
-            }
-            else
-            {
-                sprintf(headr,
-                        "HTTP/1.1 501 not implemented\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: %s\r\n"
-                        "Date: %s\r\n\r\n",
-                        alive,currentDate);
-                write_all(connFd, headr, strlen(headr));
-            }
-            free(request->headers);
-            free(request);
         }
     }
     free(buf);
@@ -557,6 +570,9 @@ int main(int argc, char* argv[]) {
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
+                // serve_http(connFd);
+                // close(connFd);
+                // continue;
                 addContent(connFd, clientAddr);
         }
         // join all thread and free mutex
