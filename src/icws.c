@@ -309,7 +309,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
 
 void serve_http(int connFd) {
     char * currentDate = getCurrentTime();
-    char buf[MAXBUF];
+    int bufSize = MAXBUF;
+    char * buf = malloc(sizeof(char) * bufSize);
     char lineByline[MAXBUF];
     int readRet = 0;
     int pret;
@@ -320,7 +321,7 @@ void serve_http(int connFd) {
 
     // read request
     while (keep_alive){
-        memset(buf, 0, MAXBUF);
+        memset(buf, 0, bufSize);
         readRet = 0;
         memset(lineByline, 0, MAXBUF);
         fds[0].fd = connFd;
@@ -341,47 +342,43 @@ void serve_http(int connFd) {
                             "Connection: close\r\n"
                             "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
+            free(buf);
             return;
         }
         else if (pret < 0){
             printf("%sLOG:%s %spoll() fail%s\n", PURPLE,RESET,RED,RESET);
+            free(buf);
             return;
         }
         else{
-            // printf("passsed\n");
             while((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
-                // printf("%d\n", currentRead);
+                // if size per one persistant request is bigger than 8192 byte, make buffer bigger
+                if (readRet + currentRead > bufSize){
+                    bufSize += currentRead + 1;
+                    buf = realloc(buf, sizeof(char) * bufSize);
+                }
                 strcat(buf, lineByline);
-                // printf("passsed\n");
                 readRet += currentRead;
+                // check end of 
                 if (readRet >= 4)
                 {
                     char checkCarraigeReturnAndNewLine[5];
                     memset(checkCarraigeReturnAndNewLine, 0, 4);
                     for (int i = readRet - 4; i < readRet; i++)
                     {
-                        if (buf[i] == '\r')
-                        {
-                            strcat(checkCarraigeReturnAndNewLine, "\r");
-                        }
-                        if (buf[i] == '\n')
-                        {
-                            strcat(checkCarraigeReturnAndNewLine, "\n");
-                        }
+                        if (buf[i] == '\r') { strcat(checkCarraigeReturnAndNewLine, "\r"); }
+                        if (buf[i] == '\n'){ strcat(checkCarraigeReturnAndNewLine, "\n"); }
                     }
-                    if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n"))
-                    {
-                        break;
-                    }
+                    if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n")){ break; }
                     memset(checkCarraigeReturnAndNewLine, 0, 5);
                 }
-                // printf("finish loop\n");
                 memset(lineByline, 0, MAXBUF);
             }
-            // printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
+            // at most one thread can use parse function at a time
             pthread_mutex_lock(&parseLock);
             Request *request = parse(buf, readRet, connFd);
             pthread_mutex_unlock(&parseLock);
+            // close read function after sending request if there is no header "Connection: keep-alive"
             keep_alive = 0;
             if (request != NULL){
                 for (int i = 0; i < request->header_count; i++)
@@ -396,6 +393,7 @@ void serve_http(int connFd) {
                     }
                 }
             }
+            // for response header
             char * alive = getAliveHeader(keep_alive);
             char headr[MAXBUF];
             if (request == NULL)
@@ -409,7 +407,6 @@ void serve_http(int connFd) {
                 write_all(connFd, headr, strlen(headr));
                 free(request);
                 continue;
-                // return;
             }
             else if (strcasecmp(request->http_version, "HTTP/1.1") && strcasecmp(request->http_version, "HTTP/1.0"))
             {
@@ -423,12 +420,10 @@ void serve_http(int connFd) {
             }
             else if (strcasecmp(request->http_method, "GET") == 0)
             {
-                // printf("%sLOG:%s %sGET method matched%s\n", PURPLE, RESET, BLUE, RESET);
                 respond_get(connFd, request->http_uri, 0, keep_alive);
             }
             else if (strcasecmp(request->http_method, "HEAD") == 0)
             {
-                // printf("%sLOG:%s %sHEAD method matched%s\n", PURPLE, RESET, BLUE, RESET);
                 respond_get(connFd, request->http_uri, 1, keep_alive);
             }
             else
@@ -445,6 +440,7 @@ void serve_http(int connFd) {
             free(request);
         }
     }
+    free(buf);
 }
 
 
@@ -507,27 +503,20 @@ int main(int argc, char* argv[]) {
         while (1)
         {
             c = getopt_long(argc, argv, "0123", long_options, &option_index);
-            if (c == -1)
-            {
-                break;
-            }
+            if (c == -1){ break; }
             // int this_option_optind = optind ? optind : 1;
             switch (c)
             {
             case '0':
-                // printf("passed port\n");
                 listenFd = open_listenfd(argv[2]);
                 break;
             case '1':
-                // printf("root\n");
                 dirName = argv[4];
                 break;
             case '2':
-                // printf("threadNum\n");
                 threadNum = atoi(argv[6]);
                 break;
             case '3':
-                // printf("No time out yet\n");
                 timeout = atoi(argv[8]);
                 break;
 
@@ -536,13 +525,12 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
         }
-        // printf("Thread: %d, root: %s\n", threadNum,dirName);
 
 
         pthread_t thread[threadNum];
+        // spawn n threads
         for (int i = 0; i < threadNum; i++)
         {
-            // printf("Thread %d is created and waiting\n", i);
             if (pthread_create(&thread[i], NULL, &startThread, (void *) &i))
             {
                 printf("%sFail to create thread at %d%s\n", RED, i, RESET);
@@ -564,24 +552,21 @@ int main(int argc, char* argv[]) {
                     continue; 
                 }
 
-                // printf("\n%s===========================================================%s\n", CYAN,RESET);
                 char hostBuf[MAXBUF], svcBuf[MAXBUF];
                 if (getnameinfo((SA *) &clientAddr, clientLen, 
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
-                        // printf("%sConnection from%s %s%s:%s%s\n", PURPLE, RESET, GREEN,hostBuf, svcBuf, RESET);
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
                 addContent(connFd, clientAddr);
-                // printf("%sLOG:%s %sContinue geting request%s\n", PURPLE, RESET,GREEN,RESET);
-                // printf("\n%s===========================================================%s\n", CYAN,RESET);
         }
-
+        // join all thread and free mutex
         for (int i = 0; i < threadNum; i++) {
             if (pthread_join(thread[i], NULL) != 0) {
                 perror("Failed to join the thread\n");
             }
         }
         pthread_mutex_destroy(&mutexQueue);
+        pthread_mutex_destroy(&parseLock);
         pthread_cond_destroy(&condQueue);
 
         return 0;
