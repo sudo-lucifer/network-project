@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <strings.h>
 #include<sys/types.h>
 #include<sys/socket.h>
@@ -8,6 +9,7 @@
 #include<string.h>
 #include <time.h>
 #include<unistd.h>
+#include<signal.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <getopt.h>
@@ -35,6 +37,7 @@ typedef struct survival_bag {
 } threadContent;
 
 char * dirName;
+char * port;
 
 // for thread pool. not thread save but fix by using mutex
 threadContent JobQueue[MAXQ];
@@ -48,6 +51,102 @@ pthread_mutex_t mutexQueue;
 pthread_mutex_t parseLock;
 // conditional variables
 pthread_cond_t condQueue;
+
+int is_sigint = 0;
+
+//cgi 
+// static char * inferiorCmd;
+
+void set_environment(Request request){
+    // TODO: 
+    // PATH_INFO
+    // QUERY_String
+    // SCRIPT_NAME from cgiHandler
+    int content_length = 1; // done
+    int request_method = 1; // done
+    int content_type = 1; // done
+    int http_accept = 1; // done
+    int http_referer = 1; // done
+    int http_accept_encoding = 1; // done
+    int http_accept_language = 1; // done
+    int http_accpet_charset = 1; // done
+    int http_host = 1; // done
+    int http_cookie = 1; // done
+    int http_user_agent = 1; // done
+    int http_connection = 1; // done
+
+    for (int i = 0; i < request.header_count; i++){
+        char * headerName = strdup(request.headers[i].header_name);
+        char * headerValue = strdup(request.headers[i].header_value);
+        if (!strcasecmp(headerName, "Accept") && http_accept){
+            http_accept = 0;
+            setenv("HTTP_ACCEPT", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Content-length") && content_length){
+            content_length = 0;
+            setenv("CONTENT_LENGTH", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Content-type") && content_type){
+            content_type = 0;
+            setenv("CONTENT_TYPE", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Access-Control-Request-Method") && request_method){
+            request_method = 0;
+            setenv("REQUEST_METHOD", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Referer") && http_referer){
+            http_referer = 0;
+            setenv("HTTP_REFERER", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Encoding") && http_accept_encoding){
+            http_accept_encoding = 0;
+            setenv("HTTP_ACCEPT_ENCODING", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Language") && http_accept_language){
+            http_accept_language = 0;
+            setenv("HTTP_ACCEPT_LANGUAGE", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Encoding") && http_accept_encoding){
+            http_accept_encoding = 0;
+            setenv("HTTP_ACCEPT_ENCODING", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Charset") && http_accpet_charset){
+            http_accpet_charset = 0;
+            setenv("HTTP_ACCEPT_CHARSET", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Host") && http_host){
+            http_host = 0;
+            setenv("HTTP_HOST", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Cookie") && http_cookie){
+            http_cookie = 0;
+            setenv("HTTP_COOKIE", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "User-Agent") && http_user_agent){
+            http_user_agent = 0;
+            setenv("HTTP_USER_AGENT", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Connection") && http_connection){
+            http_connection = 0;
+            setenv("HTTP_CONNECTION", headerValue, 1);
+        }
+        free(headerValue);
+        free(headerName);
+
+    }
+
+    setenv("GATEWAY_INTERFACE", "CGI/1.1", 1);
+    setenv("SERVER_PROTOCOL", "HTTP/1.1", 1);
+    setenv("SERVER_SOFTWARE", "ICWS", 1);
+    setenv("SERVER_PORT", port,1);
+    setenv("REQUEST_URI", request.http_uri, 1);
+
+
+}
+
+void sigint_handler(int signum){
+    is_sigint = 1;
+}
 
 char * getAliveHeader(int status){
     if (!status){ return strdup("close");}
@@ -233,7 +332,7 @@ char * check_mime(char* ext){
     }
 
 }
-// excecute
+
 void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     char * cuurentDate = getCurrentTime();
     char loc[MAXBUF];                   
@@ -278,6 +377,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
                         "Connection: %s\r\n"
                         "Date: %s\r\n\r\n", aliveHeader, cuurentDate);
         write_all(connFd, headr , strlen(headr) );
+        free(aliveHeader);
+        free(cuurentDate);
         close(fd);
         return;
     }
@@ -305,8 +406,11 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     if ( (close(fd)) < 0 ){
         printf("Failed to close input file.\n");
     }    
+    free(cuurentDate);
+    // free(ext);
+    // free(mime);
+    free(aliveHeader);
 }
-
 
 void serve_http(int connFd) {
     char * currentDate = getCurrentTime();
@@ -346,13 +450,11 @@ void serve_http(int connFd) {
                             "Connection: close\r\n"
                             "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
-            free(buf);
-            return;
+            break;
         }
         else if (pret < 0){
             printf("%sLOG:%s %spoll() fail%s\n", PURPLE,RESET,RED,RESET);
-            free(buf);
-            return;
+            break;
         }
         else{
             while((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
@@ -412,6 +514,7 @@ void serve_http(int connFd) {
                             "Date: %s\r\n\r\n",
                             alive, currentDate);
                     write_all(connFd, headr, strlen(headr));
+                    free(alive);
                     free(request);
                     break;
                 }
@@ -446,42 +549,41 @@ void serve_http(int connFd) {
                 free(request->headers);
                 free(request);
                 // deep copy pointer
-                ptr = strdup(ptr);
+                char * temp = strdup(ptr);
                 memset(buf, 0, bufSize);
-                strcat(buf, ptr + 4);
+                strcat(buf, temp + 4);
                 ptr = strstr(buf, "\r\n\r\n");
+                free(alive);
+                free(temp);
             }
         }
     }
     free(buf);
+    free(currentDate);
 }
 
-
 void * startThread(void* args){
-    // int threadPosition = *((int *) args);
+    pthread_detach(pthread_self());
     while(1){
-        // printf("Thread %d is waiting\n", threadPosition);
         pthread_mutex_lock(&mutexQueue);
-        // printf("Thread %d is waiting\n", threadPosition);
         while(JobCount == 0){
             pthread_cond_wait(&condQueue, &mutexQueue);
         }
 
         threadContent request = JobQueue[0];
-        // printf("Thread %d starts working\n", threadPosition);
-        // push content up
         for (int i = 0; i < JobCount - 1; i++){
             JobQueue[i] = JobQueue[i + 1];
         }
         JobCount--;
-        // printf("Job removed\n");
         pthread_mutex_unlock(&mutexQueue);
-        // serve_http(request.connFd);
+        if (request.connFd == -1000){
+            break;
+        }
         serve_http(request.connFd);
         close(request.connFd);
 
     }
-
+    return NULL;
 }
 
 void addContent(int connFd, struct sockaddr_storage clientAddr){
@@ -492,8 +594,6 @@ void addContent(int connFd, struct sockaddr_storage clientAddr){
     // need handle queue is full
     JobQueue[JobCount] = job;
     JobCount++;
-    // printf("%sLOG:%s %sJob added from client, JobCount:%s %s%d%s, %sconfd:%s %s%d%s\n", PURPLE,RESET, GREEN, RESET, CYAN,JobCount,RESET,
-    // GREEN,RESET, CYAN, job.connFd, RESET);
     pthread_mutex_unlock(&mutexQueue);
     pthread_cond_signal(&condQueue);
 }
@@ -501,6 +601,18 @@ void addContent(int connFd, struct sockaddr_storage clientAddr){
 
 
 int main(int argc, char* argv[]) {
+        struct sigaction new_action, old_action;
+
+        new_action.sa_handler = sigint_handler;
+        sigemptyset(&new_action.sa_mask);
+        new_action.sa_flags = 0;
+
+        sigaction(SIGINT, NULL, &old_action);
+        if (old_action.sa_handler != SIG_IGN)
+        {
+            sigaction(SIGINT, &new_action, NULL);
+        }
+
         int listenFd;
         // initialize mutex
         pthread_mutex_init(&mutexQueue, NULL);
@@ -510,18 +622,24 @@ int main(int argc, char* argv[]) {
             {"port", 1, 0, '0'},
             {"root", 1, 0, '1'},
             {"numThreads", 1, 0, '2'},
-            {"timeout", 1, 0, '3'}};
+            {"timeout", 1, 0, '3'},
+            // {"cgiHandler", 1, 0, '4'}
+        };
         int c;
         int option_index = 0;
         while (1)
         {
             c = getopt_long(argc, argv, "0123", long_options, &option_index);
-            if (c == -1){ break; }
+            if (c == -1)
+            {
+                break;
+            }
             // int this_option_optind = optind ? optind : 1;
             switch (c)
             {
             case '0':
                 listenFd = open_listenfd(argv[2]);
+                port = strdup(argv[2]);
                 break;
             case '1':
                 dirName = argv[4];
@@ -532,19 +650,19 @@ int main(int argc, char* argv[]) {
             case '3':
                 timeout = atoi(argv[8]);
                 break;
-
+            // case '4':
+            //     inferiorCmd = argv[10];
             default:
                 printf("Missing argument %s\n", long_options[option_index].name);
                 return 0;
             }
         }
 
-
         pthread_t thread[threadNum];
         // spawn n threads
         for (int i = 0; i < threadNum; i++)
         {
-            if (pthread_create(&thread[i], NULL, &startThread, (void *) &i))
+            if (pthread_create(&thread[i], NULL, &startThread, NULL))
             {
                 printf("%sFail to create thread at %d%s\n", RED, i, RESET);
             }
@@ -554,13 +672,16 @@ int main(int argc, char* argv[]) {
         printf("%sServer boosted%s\n", PURPLE,RESET);
 
         for (;;) {
-
                 struct sockaddr_storage clientAddr;
                 socklen_t clientLen = sizeof(struct sockaddr_storage);
 
                 int connFd = accept(listenFd, (SA *) &clientAddr, &clientLen);
 
-                if (connFd < 0) { 
+                if (connFd < 0) {
+                    // printf("passed\n"); 
+                    if (is_sigint){
+                        break;
+                    }
                     fprintf(stderr, "Failed to accept\n"); 
                     continue; 
                 }
@@ -570,20 +691,21 @@ int main(int argc, char* argv[]) {
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
-                // serve_http(connFd);
-                // close(connFd);
-                // continue;
                 addContent(connFd, clientAddr);
         }
+        
+        // printf("SIGINT: Join thread: %d\n", threadNum);
+        struct sockaddr_storage clientAddr;
         // join all thread and free mutex
         for (int i = 0; i < threadNum; i++) {
-            if (pthread_join(thread[i], NULL) != 0) {
-                perror("Failed to join the thread\n");
-            }
+            addContent(-1000,clientAddr);
         }
+        // printf("Done kill thread\n");
         pthread_mutex_destroy(&mutexQueue);
         pthread_mutex_destroy(&parseLock);
+        // condQueue->conQueue.__data.__wrefs = 0;
         pthread_cond_destroy(&condQueue);
+        free(port);
 
         return 0;
 }
