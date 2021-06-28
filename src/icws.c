@@ -55,6 +55,7 @@ pthread_cond_t condQueue;
 
 int is_sigint = 0;
 
+
 //cgi 
 char * path_cgi;
 static char * inferiorCmd;
@@ -651,7 +652,6 @@ void serve_http(int connFd) {
                                 alive, currentDate);
                         write_all(connFd, headr, strlen(headr));
                     }
-
                 }
                 else
                 {
