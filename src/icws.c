@@ -1,6 +1,8 @@
+#define _GNU_SOURCE
 #include <strings.h>
 #include<sys/types.h>
 #include<sys/socket.h>
+#include<sys/wait.h>
 #include<sys/stat.h>
 #include<netdb.h>
 #include<stdio.h>
@@ -8,6 +10,7 @@
 #include<string.h>
 #include <time.h>
 #include<unistd.h>
+#include<signal.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <getopt.h>
@@ -35,10 +38,12 @@ typedef struct survival_bag {
 } threadContent;
 
 char * dirName;
+char * port;
 
-// for thread pool;
+// for thread pool. not thread save but fix by using mutex
 threadContent JobQueue[MAXQ];
 int JobCount = 0;
+// read only variables
 int threadNum = 5;
 int timeout = 0;
 
@@ -47,6 +52,194 @@ pthread_mutex_t mutexQueue;
 pthread_mutex_t parseLock;
 // conditional variables
 pthread_cond_t condQueue;
+
+int is_sigint = 0;
+
+
+//cgi 
+char * path_cgi;
+static char * inferiorCmd;
+
+void fail_exit(char *msg) { fprintf(stderr, "%s\n", msg); exit(-1); }
+
+void set_environment(Request * request){
+    int content_length = 1; // done
+    int request_method = 1; // done
+    int content_type = 1; // done
+    int http_accept = 1; // done
+    int http_referer = 1; // done
+    int http_accept_encoding = 1; // done
+    int http_accept_language = 1; // done
+    int http_accpet_charset = 1; // done
+    int http_host = 1; // done
+    int http_cookie = 1; // done
+    int http_user_agent = 1; // done
+    int http_connection = 1; // done
+
+    for (int i = 0; i < request->header_count; i++){
+        char * headerName = strdup(request->headers[i].header_name);
+        char * headerValue = strdup(request->headers[i].header_value);
+        if (!strcasecmp(headerName, "Accept") && http_accept){
+            http_accept = 0;
+            setenv("HTTP_ACCEPT", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Content-length") && content_length){
+            content_length = 0;
+            setenv("CONTENT_LENGTH", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Content-type") && content_type){
+            content_type = 0;
+            setenv("CONTENT_TYPE", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Access-Control-Request-Method") && request_method){
+            request_method = 0;
+            setenv("REQUEST_METHOD", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Referer") && http_referer){
+            http_referer = 0;
+            setenv("HTTP_REFERER", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Encoding") && http_accept_encoding){
+            http_accept_encoding = 0;
+            setenv("HTTP_ACCEPT_ENCODING", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Language") && http_accept_language){
+            http_accept_language = 0;
+            setenv("HTTP_ACCEPT_LANGUAGE", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Encoding") && http_accept_encoding){
+            http_accept_encoding = 0;
+            setenv("HTTP_ACCEPT_ENCODING", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Accept-Charset") && http_accpet_charset){
+            http_accpet_charset = 0;
+            setenv("HTTP_ACCEPT_CHARSET", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Host") && http_host){
+            http_host = 0;
+            setenv("HTTP_HOST", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Cookie") && http_cookie){
+            http_cookie = 0;
+            setenv("HTTP_COOKIE", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "User-Agent") && http_user_agent){
+            http_user_agent = 0;
+            setenv("HTTP_USER_AGENT", headerValue, 1);
+        }
+        else if (!strcasecmp(headerName, "Connection") && http_connection){
+            http_connection = 0;
+            setenv("HTTP_CONNECTION", headerValue, 1);
+        }
+        free(headerValue);
+        free(headerName);
+
+    }
+
+    char * queryString = strchr(request->http_uri, '?');
+    // printf("%s\n", queryString++);
+    if (queryString != NULL){
+        setenv("QUERY_STRING", queryString + 1, 1);
+    }
+
+    char path_info[MAXBUF];
+    for (int i = 0; i < strlen(request->http_uri); i++){
+        if (request->http_uri[i] != '?'){
+            path_info[i] = request->http_uri[i];
+        }
+        else{
+            path_info[i] = '\0';
+            break;
+        }
+    } 
+    // printf("Path info: %s\n", path_info);
+    queryString = strdup(queryString++);
+    setenv("GATEWAY_INTERFACE", "CGI/1.1", 1);
+    setenv("SERVER_PROTOCOL", "HTTP/1.1", 1);
+    setenv("SERVER_SOFTWARE", "ICWS", 1);
+    setenv("SERVER_PORT", port,1);
+    setenv("REQUEST_URI", request->http_uri, 1);
+    setenv("SCRIPT_NAME", path_cgi, 1);
+    setenv("PATH_INFO", path_info,1);
+
+}
+
+void cgi_program(Request * request, int connFd) {
+    int c2pFds[2]; /* Child to parent pipe */
+    int p2cFds[2]; /* Parent to child pipe */
+
+    struct sigaction sa;
+
+    if (pipe(c2pFds) < 0) fail_exit("c2p pipe failed.");
+    if (pipe(p2cFds) < 0) fail_exit("p2c pipe failed.");
+
+    int pid = fork();
+
+    if (pid < 0) fail_exit("Fork failed.");
+    if (pid == 0) { /* Child - set up the conduit & run inferior cmd */
+        sa.sa_handler = SIG_DFL;
+        sigaction(SIGINT, &sa, NULL);
+
+
+        set_environment(request);
+
+        /* Wire pipe's incoming to child's stdin */
+        /* First, close the unused direction. */
+        if (close(p2cFds[1]) < 0) fail_exit("failed to close p2c[1]");
+        if (p2cFds[0] != STDIN_FILENO) {
+            if (dup2(p2cFds[0], STDIN_FILENO) < 0)
+                fail_exit("dup2 stdin failed.");
+            if (close(p2cFds[0]) < 0)
+                fail_exit("close p2c[0] failed.");
+        }
+
+        /* Wire child's stdout to pipe's outgoing */
+        /* But first, close the unused direction */
+        if (close(c2pFds[0]) < 0) fail_exit("failed to close c2p[0]");
+        if (c2pFds[1] != STDOUT_FILENO) {
+            if (dup2(c2pFds[1], STDOUT_FILENO) < 0)
+                fail_exit("dup2 stdin failed.");
+            if (close(c2pFds[1]) < 0)
+                fail_exit("close pipeFd[0] failed.");
+        }
+
+        char* inferiorArgv[] = {inferiorCmd, NULL};
+        if (execvpe(inferiorArgv[0], inferiorArgv, environ) < 0)
+            fail_exit("exec failed.");
+    }
+    else { /* Parent - send a random message */
+        /* Close the write direction in parent's incoming */
+        if (close(c2pFds[1]) < 0) fail_exit("failed to close c2p[1]");
+
+        /* Close the read direction in parent's outgoing */
+        if (close(p2cFds[0]) < 0) fail_exit("failed to close p2c[0]");
+
+        char *message = "OMGWTFBBQ\n";
+        /* Write a message to the child - replace with write_all as necessary */
+        write_all(p2cFds[1], message, strlen(message));
+        /* Close this end, done writing. */
+        if (close(p2cFds[1]) < 0) fail_exit("close p2c[01] failed.");
+
+        char buf[MAXBUF+1];
+        ssize_t numRead;
+        /* Begin reading from the child */
+        while ((numRead = read(c2pFds[0], buf, MAXBUF))>0) {
+            write_all(connFd, buf, numRead);
+            memset(buf,0,MAXBUF+1);
+        }
+        /* Close this end, done reading. */
+        if (close(c2pFds[0]) < 0) fail_exit("close c2p[01] failed.");
+
+        /* Wait for child termination & reap */
+        int status;
+
+        if (waitpid(pid, &status, 0) < 0) fail_exit("waitpid failed.");
+    }
+}
+
+void sigint_handler(int signum){
+    is_sigint = 1;
+}
 
 char * getAliveHeader(int status){
     if (!status){ return strdup("close");}
@@ -233,7 +426,7 @@ char * check_mime(char* ext){
     }
 
 }
-// excecute
+
 void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     char * cuurentDate = getCurrentTime();
     char loc[MAXBUF];                   
@@ -278,6 +471,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
                         "Connection: %s\r\n"
                         "Date: %s\r\n\r\n", aliveHeader, cuurentDate);
         write_all(connFd, headr , strlen(headr) );
+        free(aliveHeader);
+        free(cuurentDate);
         close(fd);
         return;
     }
@@ -305,25 +500,32 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     if ( (close(fd)) < 0 ){
         printf("Failed to close input file.\n");
     }    
+    free(cuurentDate);
+    // free(ext);
+    // free(mime);
+    free(aliveHeader);
 }
-
 
 void serve_http(int connFd) {
     char * currentDate = getCurrentTime();
-    char buf[MAXBUF];
+    int bufSize = MAXBUF;
+    char * buf = malloc(sizeof(char) * bufSize);
     char lineByline[MAXBUF];
     int readRet = 0;
     int pret;
     int currentRead;
     int keep_alive = 1;
+    int shouldRead = 1;
 
     struct pollfd fds[1];
 
     // read request
     while (keep_alive){
-        memset(buf, 0, MAXBUF);
-        readRet = 0;
-        memset(lineByline, 0, MAXBUF);
+        if (shouldRead){
+            memset(buf, 0, bufSize);
+            readRet = 0;
+            memset(lineByline, 0, MAXBUF);
+        }
         fds[0].fd = connFd;
         fds[0].events = 0;
         fds[0].events |= POLLIN;
@@ -342,138 +544,165 @@ void serve_http(int connFd) {
                             "Connection: close\r\n"
                             "Date: %s\r\n\r\n", currentDate);
             write_all(connFd, headr,strlen(headr));
-            return;
+            break;
         }
         else if (pret < 0){
             printf("%sLOG:%s %spoll() fail%s\n", PURPLE,RESET,RED,RESET);
-            return;
+            break;
         }
         else{
-            // printf("passsed\n");
             while((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
-                // printf("%d\n", currentRead);
+                // if size per one persistant request is bigger than 8192 byte, make buffer bigger
+                if (readRet + currentRead > bufSize){
+                    bufSize += currentRead + 1;
+                    buf = realloc(buf, sizeof(char) * bufSize);
+                }
                 strcat(buf, lineByline);
-                // printf("passsed\n");
                 readRet += currentRead;
+                // check end of 
                 if (readRet >= 4)
                 {
                     char checkCarraigeReturnAndNewLine[5];
                     memset(checkCarraigeReturnAndNewLine, 0, 4);
                     for (int i = readRet - 4; i < readRet; i++)
                     {
-                        if (buf[i] == '\r')
-                        {
-                            strcat(checkCarraigeReturnAndNewLine, "\r");
-                        }
-                        if (buf[i] == '\n')
-                        {
-                            strcat(checkCarraigeReturnAndNewLine, "\n");
-                        }
+                        if (buf[i] == '\r') { strcat(checkCarraigeReturnAndNewLine, "\r"); }
+                        if (buf[i] == '\n'){ strcat(checkCarraigeReturnAndNewLine, "\n"); }
                     }
-                    if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n"))
-                    {
-                        break;
-                    }
+                    if (!strcmp(checkCarraigeReturnAndNewLine, "\r\n\r\n")){ break; }
                     memset(checkCarraigeReturnAndNewLine, 0, 5);
                 }
-                // printf("finish loop\n");
                 memset(lineByline, 0, MAXBUF);
             }
-            // printf("%sLOG:%s %s%s%s\n", PURPLE, RESET, BLUE,buf,RESET);
-            pthread_mutex_lock(&parseLock);
-            Request *request = parse(buf, readRet, connFd);
-            pthread_mutex_unlock(&parseLock);
-            keep_alive = 0;
-            if (request != NULL){
-                for (int i = 0; i < request->header_count; i++)
+            char * ptr = strstr(buf, "\r\n\r\n");
+            while (ptr != NULL){
+                // at most one thread can use parse function at a time
+                pthread_mutex_lock(&parseLock);
+                Request *request = parse(buf, readRet, connFd);
+                pthread_mutex_unlock(&parseLock);
+                // close read function after sending request if there is no header "Connection: keep-alive"
+                keep_alive = 0;
+                if (request != NULL)
                 {
-                    if (strcasecmp(request->headers[i].header_name, "connection") == 0)
+                    for (int i = 0; i < request->header_count; i++)
                     {
-                        if (strcasecmp(request->headers[i].header_value, "keep-alive") == 0)
+                        if (strcasecmp(request->headers[i].header_name, "connection") == 0)
                         {
-                            keep_alive = 1;
-                            break;
+                            if (strcasecmp(request->headers[i].header_value, "keep-alive") == 0)
+                            {
+                                keep_alive = 1;
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            char * alive = getAliveHeader(keep_alive);
-            char headr[MAXBUF];
-            if (request == NULL)
-            {
-                sprintf(headr,
-                        "HTTP/1.1 400 bad request\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: %s\r\n"
-                        "Date: %s\r\n\r\n",
-                        alive, currentDate);
-                write_all(connFd, headr, strlen(headr));
+                // for response header
+                char *alive = getAliveHeader(keep_alive);
+                char headr[MAXBUF];
+                if (request == NULL)
+                {
+                    sprintf(headr,
+                            "HTTP/1.1 400 bad request\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: %s\r\n"
+                            "Date: %s\r\n\r\n",
+                            alive, currentDate);
+                    write_all(connFd, headr, strlen(headr));
+                    free(alive);
+                    free(request);
+                    break;
+                }
+                else if (strcasecmp(request->http_version, "HTTP/1.1") && strcasecmp(request->http_version, "HTTP/1.0"))
+                {
+                    sprintf(headr,
+                            "HTTP/1.1 505 HTTP version not supported\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: %s\r\n"
+                            "Date: %s\r\n\r\n",
+                            alive, currentDate);
+                    write_all(connFd, headr, strlen(headr));
+                }
+                else if (strcasecmp(request->http_method, "GET") == 0)
+                {
+                    if (strstr(request->http_uri, "/cgi/") != NULL){
+                        cgi_program(request, connFd);
+                    }
+                    else{
+                        respond_get(connFd, request->http_uri, 0, keep_alive);
+                    }
+                }
+                else if (strcasecmp(request->http_method, "HEAD") == 0)
+                {
+                    if (strstr(request->http_uri, "/cgi/") != NULL){
+                        cgi_program(request,connFd);
+                    }
+                    else{
+                        respond_get(connFd, request->http_uri, 1, keep_alive);
+                    }
+                }
+                else if (strcasecmp(request->http_method, "POST") == 0){
+                    if (strstr(request->http_uri, "/cgi/") != NULL){
+                        cgi_program(request,connFd);
+                    }
+                    else{
+                        sprintf(headr,
+                                "HTTP/1.1 400 bad request\r\n"
+                                "Server: ICWS\r\n"
+                                "Connection: %s\r\n"
+                                "Date: %s\r\n\r\n",
+                                alive, currentDate);
+                        write_all(connFd, headr, strlen(headr));
+                    }
+                }
+                else
+                {
+                    sprintf(headr,
+                            "HTTP/1.1 501 not implemented\r\n"
+                            "Server: ICWS\r\n"
+                            "Connection: %s\r\n"
+                            "Date: %s\r\n\r\n",
+                            alive, currentDate);
+                    write_all(connFd, headr, strlen(headr));
+                }
+                free(request->headers);
                 free(request);
-                continue;
-                // return;
+                // deep copy pointer
+                char * temp = strdup(ptr);
+                memset(buf, 0, bufSize);
+                strcat(buf, temp + 4);
+                ptr = strstr(buf, "\r\n\r\n");
+                free(alive);
+                free(temp);
             }
-            else if (strcasecmp(request->http_version, "HTTP/1.1") && strcasecmp(request->http_version, "HTTP/1.0"))
-            {
-                sprintf(headr,
-                        "HTTP/1.1 505 HTTP version not supported\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: %s\r\n"
-                        "Date: %s\r\n\r\n",
-                        alive,currentDate);
-                write_all(connFd, headr, strlen(headr));
-            }
-            else if (strcasecmp(request->http_method, "GET") == 0)
-            {
-                // printf("%sLOG:%s %sGET method matched%s\n", PURPLE, RESET, BLUE, RESET);
-                respond_get(connFd, request->http_uri, 0, keep_alive);
-            }
-            else if (strcasecmp(request->http_method, "HEAD") == 0)
-            {
-                // printf("%sLOG:%s %sHEAD method matched%s\n", PURPLE, RESET, BLUE, RESET);
-                respond_get(connFd, request->http_uri, 1, keep_alive);
-            }
-            else
-            {
-                sprintf(headr,
-                        "HTTP/1.1 501 not implemented\r\n"
-                        "Server: ICWS\r\n"
-                        "Connection: %s\r\n"
-                        "Date: %s\r\n\r\n",
-                        alive,currentDate);
-                write_all(connFd, headr, strlen(headr));
-            }
-            free(request->headers);
-            free(request);
         }
     }
+    free(buf);
+    free(currentDate);
 }
 
-
 void * startThread(void* args){
-    // int threadPosition = *((int *) args);
+    pthread_detach(pthread_self());
     while(1){
-        // printf("Thread %d is waiting\n", threadPosition);
         pthread_mutex_lock(&mutexQueue);
-        // printf("Thread %d is waiting\n", threadPosition);
         while(JobCount == 0){
             pthread_cond_wait(&condQueue, &mutexQueue);
         }
 
         threadContent request = JobQueue[0];
-        // printf("Thread %d starts working\n", threadPosition);
-        // push content up
         for (int i = 0; i < JobCount - 1; i++){
             JobQueue[i] = JobQueue[i + 1];
         }
         JobCount--;
-        // printf("Job removed\n");
         pthread_mutex_unlock(&mutexQueue);
-        // serve_http(request.connFd);
+        if (request.connFd == -1000){
+            break;
+        }
         serve_http(request.connFd);
         close(request.connFd);
 
     }
-
+    return NULL;
+    // pthread_exit;
 }
 
 void addContent(int connFd, struct sockaddr_storage clientAddr){
@@ -484,8 +713,6 @@ void addContent(int connFd, struct sockaddr_storage clientAddr){
     // need handle queue is full
     JobQueue[JobCount] = job;
     JobCount++;
-    // printf("%sLOG:%s %sJob added from client, JobCount:%s %s%d%s, %sconfd:%s %s%d%s\n", PURPLE,RESET, GREEN, RESET, CYAN,JobCount,RESET,
-    // GREEN,RESET, CYAN, job.connFd, RESET);
     pthread_mutex_unlock(&mutexQueue);
     pthread_cond_signal(&condQueue);
 }
@@ -493,6 +720,21 @@ void addContent(int connFd, struct sockaddr_storage clientAddr){
 
 
 int main(int argc, char* argv[]) {
+        struct sigaction new_action, old_action;
+
+        new_action.sa_handler = sigint_handler;
+        sigemptyset(&new_action.sa_mask);
+        new_action.sa_flags = 0;
+
+        sigaction(SIGINT, NULL, &old_action);
+        if (old_action.sa_handler != SIG_IGN)
+        {
+            sigaction(SIGINT, &new_action, NULL);
+        }
+
+        signal(SIGPIPE, SIG_IGN);
+
+
         int listenFd;
         // initialize mutex
         pthread_mutex_init(&mutexQueue, NULL);
@@ -502,12 +744,14 @@ int main(int argc, char* argv[]) {
             {"port", 1, 0, '0'},
             {"root", 1, 0, '1'},
             {"numThreads", 1, 0, '2'},
-            {"timeout", 1, 0, '3'}};
+            {"timeout", 1, 0, '3'},
+            {"cgiHandler", 1, 0, '4'}
+        };
         int c;
         int option_index = 0;
         while (1)
         {
-            c = getopt_long(argc, argv, "0123", long_options, &option_index);
+            c = getopt_long(argc, argv, "01234", long_options, &option_index);
             if (c == -1)
             {
                 break;
@@ -516,35 +760,33 @@ int main(int argc, char* argv[]) {
             switch (c)
             {
             case '0':
-                // printf("passed port\n");
                 listenFd = open_listenfd(argv[2]);
+                port = strdup(argv[2]);
                 break;
             case '1':
-                // printf("root\n");
                 dirName = argv[4];
                 break;
             case '2':
-                // printf("threadNum\n");
                 threadNum = atoi(argv[6]);
                 break;
             case '3':
-                // printf("No time out yet\n");
                 timeout = atoi(argv[8]);
                 break;
-
+            case '4':
+                path_cgi = strdup(argv[10]);
+                inferiorCmd = argv[10];
+                break;
             default:
                 printf("Missing argument %s\n", long_options[option_index].name);
                 return 0;
             }
         }
-        // printf("Thread: %d, root: %s\n", threadNum,dirName);
-
 
         pthread_t thread[threadNum];
+        // spawn n threads
         for (int i = 0; i < threadNum; i++)
         {
-            // printf("Thread %d is created and waiting\n", i);
-            if (pthread_create(&thread[i], NULL, &startThread, (void *) &i))
+            if (pthread_create(&thread[i], NULL, &startThread, NULL))
             {
                 printf("%sFail to create thread at %d%s\n", RED, i, RESET);
             }
@@ -554,36 +796,41 @@ int main(int argc, char* argv[]) {
         printf("%sServer boosted%s\n", PURPLE,RESET);
 
         for (;;) {
-
                 struct sockaddr_storage clientAddr;
                 socklen_t clientLen = sizeof(struct sockaddr_storage);
 
                 int connFd = accept(listenFd, (SA *) &clientAddr, &clientLen);
 
-                if (connFd < 0) { 
+                if (connFd < 0) {
+                    // printf("passed\n"); 
+                    if (is_sigint){
+                        break;
+                    }
                     fprintf(stderr, "Failed to accept\n"); 
                     continue; 
                 }
 
-                // printf("\n%s===========================================================%s\n", CYAN,RESET);
                 char hostBuf[MAXBUF], svcBuf[MAXBUF];
                 if (getnameinfo((SA *) &clientAddr, clientLen, 
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
-                        // printf("%sConnection from%s %s%s:%s%s\n", PURPLE, RESET, GREEN,hostBuf, svcBuf, RESET);
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
                 addContent(connFd, clientAddr);
-                // printf("%sLOG:%s %sContinue geting request%s\n", PURPLE, RESET,GREEN,RESET);
-                // printf("\n%s===========================================================%s\n", CYAN,RESET);
         }
-
+        
+        // printf("SIGINT: Join thread: %d\n", threadNum);
+        struct sockaddr_storage clientAddr;
+        // join all thread and free mutex
         for (int i = 0; i < threadNum; i++) {
-            if (pthread_join(thread[i], NULL) != 0) {
-                perror("Failed to join the thread\n");
-            }
+            addContent(-1000,clientAddr);
         }
+        // printf("Done kill thread\n");
         pthread_mutex_destroy(&mutexQueue);
+        pthread_mutex_destroy(&parseLock);
+        // condQueue->conQueue.__data.__wrefs = 0;
         pthread_cond_destroy(&condQueue);
+        free(port);
+        free(path_cgi);
 
         return 0;
 }
