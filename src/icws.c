@@ -2,6 +2,7 @@
 #include <strings.h>
 #include<sys/types.h>
 #include<sys/socket.h>
+#include<sys/wait.h>
 #include<sys/stat.h>
 #include<netdb.h>
 #include<stdio.h>
@@ -55,13 +56,12 @@ pthread_cond_t condQueue;
 int is_sigint = 0;
 
 //cgi 
-// static char * inferiorCmd;
+char * path_cgi;
+static char * inferiorCmd;
 
-void set_environment(Request request){
-    // TODO: 
-    // PATH_INFO
-    // QUERY_String
-    // SCRIPT_NAME from cgiHandler
+void fail_exit(char *msg) { fprintf(stderr, "%s\n", msg); exit(-1); }
+
+void set_environment(Request * request){
     int content_length = 1; // done
     int request_method = 1; // done
     int content_type = 1; // done
@@ -75,9 +75,9 @@ void set_environment(Request request){
     int http_user_agent = 1; // done
     int http_connection = 1; // done
 
-    for (int i = 0; i < request.header_count; i++){
-        char * headerName = strdup(request.headers[i].header_name);
-        char * headerValue = strdup(request.headers[i].header_value);
+    for (int i = 0; i < request->header_count; i++){
+        char * headerName = strdup(request->headers[i].header_name);
+        char * headerValue = strdup(request->headers[i].header_value);
         if (!strcasecmp(headerName, "Accept") && http_accept){
             http_accept = 0;
             setenv("HTTP_ACCEPT", headerValue, 1);
@@ -135,13 +135,105 @@ void set_environment(Request request){
 
     }
 
+    char * queryString = strchr(request->http_uri, '?');
+    // printf("%s\n", queryString++);
+    if (queryString != NULL){
+        setenv("QUERY_STRING", queryString + 1, 1);
+    }
+
+    char path_info[MAXBUF];
+    for (int i = 0; i < strlen(request->http_uri); i++){
+        if (request->http_uri[i] != '?'){
+            path_info[i] = request->http_uri[i];
+        }
+        else{
+            path_info[i] = '\0';
+            break;
+        }
+    } 
+    // printf("Path info: %s\n", path_info);
+    queryString = strdup(queryString++);
     setenv("GATEWAY_INTERFACE", "CGI/1.1", 1);
     setenv("SERVER_PROTOCOL", "HTTP/1.1", 1);
     setenv("SERVER_SOFTWARE", "ICWS", 1);
     setenv("SERVER_PORT", port,1);
-    setenv("REQUEST_URI", request.http_uri, 1);
+    setenv("REQUEST_URI", request->http_uri, 1);
+    setenv("SCRIPT_NAME", path_cgi, 1);
+    setenv("PATH_INFO", path_info,1);
+
+}
+
+void cgi_program(Request * request, int connFd) {
+    int c2pFds[2]; /* Child to parent pipe */
+    int p2cFds[2]; /* Parent to child pipe */
+
+    struct sigaction sa;
+
+    if (pipe(c2pFds) < 0) fail_exit("c2p pipe failed.");
+    if (pipe(p2cFds) < 0) fail_exit("p2c pipe failed.");
+
+    int pid = fork();
+
+    if (pid < 0) fail_exit("Fork failed.");
+    if (pid == 0) { /* Child - set up the conduit & run inferior cmd */
+        sa.sa_handler = SIG_DFL;
+        sigaction(SIGINT, &sa, NULL);
 
 
+        set_environment(request);
+
+        /* Wire pipe's incoming to child's stdin */
+        /* First, close the unused direction. */
+        if (close(p2cFds[1]) < 0) fail_exit("failed to close p2c[1]");
+        if (p2cFds[0] != STDIN_FILENO) {
+            if (dup2(p2cFds[0], STDIN_FILENO) < 0)
+                fail_exit("dup2 stdin failed.");
+            if (close(p2cFds[0]) < 0)
+                fail_exit("close p2c[0] failed.");
+        }
+
+        /* Wire child's stdout to pipe's outgoing */
+        /* But first, close the unused direction */
+        if (close(c2pFds[0]) < 0) fail_exit("failed to close c2p[0]");
+        if (c2pFds[1] != STDOUT_FILENO) {
+            if (dup2(c2pFds[1], STDOUT_FILENO) < 0)
+                fail_exit("dup2 stdin failed.");
+            if (close(c2pFds[1]) < 0)
+                fail_exit("close pipeFd[0] failed.");
+        }
+
+        char* inferiorArgv[] = {inferiorCmd, NULL};
+        if (execvpe(inferiorArgv[0], inferiorArgv, environ) < 0)
+            fail_exit("exec failed.");
+    }
+    else { /* Parent - send a random message */
+        /* Close the write direction in parent's incoming */
+        if (close(c2pFds[1]) < 0) fail_exit("failed to close c2p[1]");
+
+        /* Close the read direction in parent's outgoing */
+        if (close(p2cFds[0]) < 0) fail_exit("failed to close p2c[0]");
+
+        char *message = "OMGWTFBBQ\n";
+        /* Write a message to the child - replace with write_all as necessary */
+        write_all(p2cFds[1], message, strlen(message));
+        /* Close this end, done writing. */
+        if (close(p2cFds[1]) < 0) fail_exit("close p2c[01] failed.");
+
+        char buf[MAXBUF+1];
+        ssize_t numRead;
+        /* Begin reading from the child */
+        while ((numRead = read(c2pFds[0], buf, MAXBUF))>0) {
+            write_all(connFd, buf, numRead);
+            memset(buf,0,MAXBUF+1);
+        }
+        /* Close this end, done reading. */
+        if (close(c2pFds[0]) < 0) fail_exit("close c2p[01] failed.");
+
+        /* Wait for child termination & reap */
+        int status;
+
+        if (waitpid(pid, &status, 0) < 0) fail_exit("waitpid failed.");
+    }
 }
 
 void sigint_handler(int signum){
@@ -530,11 +622,36 @@ void serve_http(int connFd) {
                 }
                 else if (strcasecmp(request->http_method, "GET") == 0)
                 {
-                    respond_get(connFd, request->http_uri, 0, keep_alive);
+                    if (strstr(request->http_uri, "/cgi/") != NULL){
+                        cgi_program(request, connFd);
+                    }
+                    else{
+                        respond_get(connFd, request->http_uri, 0, keep_alive);
+                    }
                 }
                 else if (strcasecmp(request->http_method, "HEAD") == 0)
                 {
-                    respond_get(connFd, request->http_uri, 1, keep_alive);
+                    if (strstr(request->http_uri, "/cgi/") != NULL){
+                        cgi_program(request,connFd);
+                    }
+                    else{
+                        respond_get(connFd, request->http_uri, 1, keep_alive);
+                    }
+                }
+                else if (strcasecmp(request->http_method, "POST") == 0){
+                    if (strstr(request->http_uri, "/cgi/") != NULL){
+                        cgi_program(request,connFd);
+                    }
+                    else{
+                        sprintf(headr,
+                                "HTTP/1.1 400 bad request\r\n"
+                                "Server: ICWS\r\n"
+                                "Connection: %s\r\n"
+                                "Date: %s\r\n\r\n",
+                                alive, currentDate);
+                        write_all(connFd, headr, strlen(headr));
+                    }
+
                 }
                 else
                 {
@@ -584,6 +701,7 @@ void * startThread(void* args){
 
     }
     return NULL;
+    // pthread_exit;
 }
 
 void addContent(int connFd, struct sockaddr_storage clientAddr){
@@ -613,6 +731,9 @@ int main(int argc, char* argv[]) {
             sigaction(SIGINT, &new_action, NULL);
         }
 
+        signal(SIGPIPE, SIG_IGN);
+
+
         int listenFd;
         // initialize mutex
         pthread_mutex_init(&mutexQueue, NULL);
@@ -623,13 +744,13 @@ int main(int argc, char* argv[]) {
             {"root", 1, 0, '1'},
             {"numThreads", 1, 0, '2'},
             {"timeout", 1, 0, '3'},
-            // {"cgiHandler", 1, 0, '4'}
+            {"cgiHandler", 1, 0, '4'}
         };
         int c;
         int option_index = 0;
         while (1)
         {
-            c = getopt_long(argc, argv, "0123", long_options, &option_index);
+            c = getopt_long(argc, argv, "01234", long_options, &option_index);
             if (c == -1)
             {
                 break;
@@ -650,8 +771,10 @@ int main(int argc, char* argv[]) {
             case '3':
                 timeout = atoi(argv[8]);
                 break;
-            // case '4':
-            //     inferiorCmd = argv[10];
+            case '4':
+                path_cgi = strdup(argv[10]);
+                inferiorCmd = argv[10];
+                break;
             default:
                 printf("Missing argument %s\n", long_options[option_index].name);
                 return 0;
@@ -706,6 +829,7 @@ int main(int argc, char* argv[]) {
         // condQueue->conQueue.__data.__wrefs = 0;
         pthread_cond_destroy(&condQueue);
         free(port);
+        free(path_cgi);
 
         return 0;
 }
