@@ -53,6 +53,7 @@ char * getAliveHeader(int status){
     else{ return strdup("keep-alive"); }
 }
 
+
 char * getCurrentTime(){
         time_t rawTime;
         time(&rawTime);
