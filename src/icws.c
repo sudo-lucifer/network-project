@@ -18,6 +18,11 @@
 #include "pcsa_net.h"
 #include "parse.h"
 
+// Collaborator List (In-case anyone needed someone's name):
+//      - Thanawin Boonpojanasoontorn  (6280163)
+//      - Vanessa Rujipatanakul (6280204)
+//      - Sujinna Phutatham (6181279)
+
 
 /* Rather arbitrary. In real life, be careful with buffer overflow */
 #define MAXBUF 8192
@@ -33,7 +38,7 @@
 
 typedef struct sockaddr SA;
 typedef struct survival_bag {
-        struct sockaddr_storage clientAddr;
+        char * svcBuf;
         int connFd;
 } threadContent;
 
@@ -62,109 +67,89 @@ static char * inferiorCmd;
 
 void fail_exit(char *msg) { fprintf(stderr, "%s\n", msg); exit(-1); }
 
-void set_environment(Request * request){
-    int content_length = 1; // done
-    int request_method = 1; // done
-    int content_type = 1; // done
-    int http_accept = 1; // done
-    int http_referer = 1; // done
-    int http_accept_encoding = 1; // done
-    int http_accept_language = 1; // done
-    int http_accpet_charset = 1; // done
-    int http_host = 1; // done
-    int http_cookie = 1; // done
-    int http_user_agent = 1; // done
-    int http_connection = 1; // done
 
+void set_environment(Request * request, char * svcBuf){
+    int content_length = 0;
+    int content_type = 0;    
+    int http_accept = 0;
+    int http_referer = 0;
+    int http_accept_encoding = 0;
+    int http_accept_language = 0;
+    int http_accpet_charset = 0;
+    int http_host = 0;
+    int http_cookie = 0;
+    int http_user_agent = 0;
+    int http_connection = 0;
+
+    // check each given header and set environment variable if the variable is not set
     for (int i = 0; i < request->header_count; i++){
-        char * headerName = strdup(request->headers[i].header_name);
-        char * headerValue = strdup(request->headers[i].header_value);
-        if (!strcasecmp(headerName, "Accept") && http_accept){
-            http_accept = 0;
-            setenv("HTTP_ACCEPT", headerValue, 1);
+        char* header_name = request->headers[i].header_name;
+        char* header_value = request->headers[i].header_value;
+        if (strcasecmp(header_name, "CONTENT-LENGTH") == 0 && !content_length){
+            content_length = 1;
+            setenv("CONTENT_LENGTH", header_value, 1);
+        } else if (strcasecmp(header_name, "CONTENT-TYPE") == 0 && !content_type){
+            content_type = 1;
+            setenv("CONTENT_TYPE", header_value, 1);
+        } else if (strcasecmp(header_name, "ACCEPT") == 0 && !http_accept){
+            http_accept = 1;
+            setenv("HTTP_ACCEPT", header_value, 1);
+        } else if (strcasecmp(header_name, "REFERER") == 0 && !http_referer){
+            http_referer = 1;
+            setenv("HTTP_REFERER", header_value, 1);
+        } else if (strcasecmp(header_name, "ACCEPT-ENCODING") == 0 && !http_accept_encoding){
+            http_accept_encoding = 1;
+            setenv("HTTP_ACCEPT_ENCODING", header_value, 1);
+        } else if (strcasecmp(header_name, "ACCEPT-LANGUAGE") == 0 && !http_accept_language){
+            http_accept_language = 1;
+            setenv("HTTP_ACCEPT_LANGUAGE", header_value, 1);
+        } else if (strcasecmp(header_name, "ACCEPT-CHARSET") == 0 && !http_accpet_charset){
+            http_accpet_charset = 1;
+            setenv("HTTP_ACCEPT_CHARSET", header_value, 1);
+        } else if (strcasecmp(header_name, "HOST") == 0 && !http_host){
+            http_host = 1;
+            setenv("HTTP_HOST", header_value, 1);
+        } else if (strcasecmp(header_name, "COOKIE") == 0 && !http_cookie){
+            http_cookie = 1;
+            setenv("HTTP_COOKIE", header_value, 1);
+        } else if (strcasecmp(header_name, "USER-AGENT") == 0 && !http_user_agent){
+            http_user_agent = 1;
+            setenv("HTTP_USER_AGENT", header_value, 1);
+        } else if (strcasecmp(header_name, "CONNECTION") == 0 && !http_connection){
+            http_connection = 1;
+            setenv("HTTP_CONNECTION", header_value, 1);
         }
-        else if (!strcasecmp(headerName, "Content-length") && content_length){
-            content_length = 0;
-            setenv("CONTENT_LENGTH", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Content-type") && content_type){
-            content_type = 0;
-            setenv("CONTENT_TYPE", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Access-Control-Request-Method") && request_method){
-            request_method = 0;
-            setenv("REQUEST_METHOD", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Referer") && http_referer){
-            http_referer = 0;
-            setenv("HTTP_REFERER", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Accept-Encoding") && http_accept_encoding){
-            http_accept_encoding = 0;
-            setenv("HTTP_ACCEPT_ENCODING", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Accept-Language") && http_accept_language){
-            http_accept_language = 0;
-            setenv("HTTP_ACCEPT_LANGUAGE", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Accept-Encoding") && http_accept_encoding){
-            http_accept_encoding = 0;
-            setenv("HTTP_ACCEPT_ENCODING", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Accept-Charset") && http_accpet_charset){
-            http_accpet_charset = 0;
-            setenv("HTTP_ACCEPT_CHARSET", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Host") && http_host){
-            http_host = 0;
-            setenv("HTTP_HOST", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Cookie") && http_cookie){
-            http_cookie = 0;
-            setenv("HTTP_COOKIE", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "User-Agent") && http_user_agent){
-            http_user_agent = 0;
-            setenv("HTTP_USER_AGENT", headerValue, 1);
-        }
-        else if (!strcasecmp(headerName, "Connection") && http_connection){
-            http_connection = 0;
-            setenv("HTTP_CONNECTION", headerValue, 1);
-        }
-        free(headerValue);
-        free(headerName);
-
     }
 
-    char * queryString = strchr(request->http_uri, '?');
-    // printf("%s\n", queryString++);
-    if (queryString != NULL){
-        setenv("QUERY_STRING", queryString + 1, 1);
+    // get the query string from the request uri if it exists
+    char* query_string = strchr(request->http_uri, '?');
+    if (query_string != NULL){
+        setenv("QUERY_STRING", query_string + 1, 1);
     }
 
+    // get the path info from the request uri
     char path_info[MAXBUF];
     for (int i = 0; i < strlen(request->http_uri); i++){
         if (request->http_uri[i] != '?'){
             path_info[i] = request->http_uri[i];
+            continue;
         }
-        else{
-            path_info[i] = '\0';
-            break;
-        }
+        break;
     } 
-    // printf("Path info: %s\n", path_info);
-    queryString = strdup(queryString++);
+
+    // set other environment variables
     setenv("GATEWAY_INTERFACE", "CGI/1.1", 1);
-    setenv("SERVER_PROTOCOL", "HTTP/1.1", 1);
-    setenv("SERVER_SOFTWARE", "ICWS", 1);
-    setenv("SERVER_PORT", port,1);
+    setenv("PATH_INFO", path_info, 1);
+    setenv("REQUEST_METHOD", request->http_method, 1);
     setenv("REQUEST_URI", request->http_uri, 1);
     setenv("SCRIPT_NAME", path_cgi, 1);
-    setenv("PATH_INFO", path_info,1);
-
+    setenv("SERVER_PORT", port, 1);
+    setenv("SERVER_PROTOCOL", "HTTP/1.1", 1);
+    setenv("SERVER_SOFTWARE", "ICWS", 1);
+    setenv("REMOTE_ADDR", svcBuf, 1);
 }
 
-void cgi_program(Request * request, int connFd) {
+void cgi_program(Request * request, int connFd, char * svcBuf, char * message) {
     int c2pFds[2]; /* Child to parent pipe */
     int p2cFds[2]; /* Parent to child pipe */
 
@@ -181,7 +166,7 @@ void cgi_program(Request * request, int connFd) {
         sigaction(SIGINT, &sa, NULL);
 
 
-        set_environment(request);
+        set_environment(request, svcBuf);
 
         /* Wire pipe's incoming to child's stdin */
         /* First, close the unused direction. */
@@ -214,9 +199,10 @@ void cgi_program(Request * request, int connFd) {
         /* Close the read direction in parent's outgoing */
         if (close(p2cFds[0]) < 0) fail_exit("failed to close p2c[0]");
 
-        char *message = "OMGWTFBBQ\n";
+        // char *message = "OMGWTFBBQ\n";
+        // printf("Message Body: %s, %d\n", message, (int) strlen(message));
         /* Write a message to the child - replace with write_all as necessary */
-        write_all(p2cFds[1], message, strlen(message));
+        write(p2cFds[1], message, strlen(message));
         /* Close this end, done writing. */
         if (close(p2cFds[1]) < 0) fail_exit("close p2c[01] failed.");
 
@@ -506,7 +492,7 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     free(aliveHeader);
 }
 
-void serve_http(int connFd) {
+void serve_http(int connFd, char * svcBuf) {
     char * currentDate = getCurrentTime();
     int bufSize = MAXBUF;
     char * buf = malloc(sizeof(char) * bufSize);
@@ -551,6 +537,7 @@ void serve_http(int connFd) {
             break;
         }
         else{
+            // read all request
             while((currentRead = read(connFd, lineByline, MAXBUF)) > 0){
                 // if size per one persistant request is bigger than 8192 byte, make buffer bigger
                 if (readRet + currentRead > bufSize){
@@ -575,7 +562,13 @@ void serve_http(int connFd) {
                 memset(lineByline, 0, MAXBUF);
             }
             char * ptr = strstr(buf, "\r\n\r\n");
-            while (ptr != NULL){
+            int message_size = MAXBUF;
+            char * message_body = malloc(sizeof(char) * message_size);
+            memset(message_body, 0, message_size);
+            int isSkip = 0;
+            int found_content_length = 0;
+            int needToReadBody = 0;
+            while (strcmp(ptr, "") != 0){
                 // at most one thread can use parse function at a time
                 pthread_mutex_lock(&parseLock);
                 Request *request = parse(buf, readRet, connFd);
@@ -586,6 +579,34 @@ void serve_http(int connFd) {
                 {
                     for (int i = 0; i < request->header_count; i++)
                     {
+                        if (strcasecmp(request->headers[i].header_name, "content-length") == 0){
+                            int content_length = atoi(request->headers[i].header_value);
+                            found_content_length = content_length;
+                            // ptr = strstr(buf, "\r\n\r\n");
+                            char *save_buf = strdup(ptr + 4);
+                            // have request but no request body
+                            if (strcasecmp(save_buf, "") == 0){
+                                free(request->headers);
+                                free(request);
+                                shouldRead = 0;
+                                needToReadBody = 1;
+                                keep_alive = 1;
+                                break;
+                            }
+                            else{
+                                isSkip = 1;
+                                int content_length = atoi(request->headers[i].header_value);
+                                found_content_length = content_length;
+                                strncpy(message_body, save_buf, content_length);
+                                // char *save_big_buf = strdup(buf);
+                                memset(buf, 0, bufSize);
+                                strcpy(buf, save_buf + content_length);
+                                readRet = strlen( save_buf + content_length);
+                                free(save_buf);
+                                // free(save_big_buf);
+                            }
+                            
+                        }
                         if (strcasecmp(request->headers[i].header_name, "connection") == 0)
                         {
                             if (strcasecmp(request->headers[i].header_value, "keep-alive") == 0)
@@ -595,6 +616,16 @@ void serve_http(int connFd) {
                             }
                         }
                     }
+                }
+                // printf("Message: %s\nSize: %d\n", message_body, message_size);
+                if (needToReadBody){
+                    // free(alive);
+                    free(message_body);
+                    message_size = 0;
+                    break;
+                }
+                else{
+                    shouldRead = 1;
                 }
                 // for response header
                 char *alive = getAliveHeader(keep_alive);
@@ -625,7 +656,7 @@ void serve_http(int connFd) {
                 else if (strcasecmp(request->http_method, "GET") == 0)
                 {
                     if (strstr(request->http_uri, "/cgi/") != NULL){
-                        cgi_program(request, connFd);
+                        cgi_program(request, connFd, svcBuf, message_body);
                     }
                     else{
                         respond_get(connFd, request->http_uri, 0, keep_alive);
@@ -634,15 +665,15 @@ void serve_http(int connFd) {
                 else if (strcasecmp(request->http_method, "HEAD") == 0)
                 {
                     if (strstr(request->http_uri, "/cgi/") != NULL){
-                        cgi_program(request,connFd);
+                        cgi_program(request,connFd, svcBuf, message_body);
                     }
                     else{
                         respond_get(connFd, request->http_uri, 1, keep_alive);
                     }
                 }
                 else if (strcasecmp(request->http_method, "POST") == 0){
-                    if (strstr(request->http_uri, "/cgi/") != NULL){
-                        cgi_program(request,connFd);
+                    if (strstr(request->http_uri, "/cgi/") != NULL && found_content_length){
+                        cgi_program(request,connFd, svcBuf, message_body);
                     }
                     else{
                         sprintf(headr,
@@ -667,12 +698,19 @@ void serve_http(int connFd) {
                 free(request->headers);
                 free(request);
                 // deep copy pointer
-                char * temp = strdup(ptr);
-                memset(buf, 0, bufSize);
-                strcat(buf, temp + 4);
-                ptr = strstr(buf, "\r\n\r\n");
+                if (!isSkip){
+                    char *temp = strdup(ptr);
+                    memset(buf, 0, bufSize);
+                    strcat(buf, temp + 4);
+                    ptr = strstr(buf, "\r\n\r\n");
+                    free(temp);
+                }
                 free(alive);
-                free(temp);
+                free(message_body);
+                message_size = 0;
+                if (ptr == NULL){
+                    ptr = "";
+                }
             }
         }
     }
@@ -697,19 +735,21 @@ void * startThread(void* args){
         if (request.connFd == -1000){
             break;
         }
-        serve_http(request.connFd);
+        serve_http(request.connFd, request.svcBuf);
         close(request.connFd);
+        free(request.svcBuf);
 
     }
     return NULL;
     // pthread_exit;
 }
 
-void addContent(int connFd, struct sockaddr_storage clientAddr){
+void addContent(int connFd, char * svcBuf){
     pthread_mutex_lock(&mutexQueue);
     threadContent job;
     job.connFd = connFd;
-    memcpy(&job.clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
+    job.svcBuf = strdup(svcBuf);
+    // memcpy(&job.clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
     // need handle queue is full
     JobQueue[JobCount] = job;
     JobCount++;
@@ -735,7 +775,7 @@ int main(int argc, char* argv[]) {
         signal(SIGPIPE, SIG_IGN);
 
 
-        int listenFd;
+        int listenFd = 0;
         // initialize mutex
         pthread_mutex_init(&mutexQueue, NULL);
         pthread_cond_init(&condQueue, NULL);
@@ -815,14 +855,17 @@ int main(int argc, char* argv[]) {
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
-                addContent(connFd, clientAddr);
+                serve_http(connFd, svcBuf);
+                close(connFd);
+                continue;
+                addContent(connFd, svcBuf);
         }
         
         // printf("SIGINT: Join thread: %d\n", threadNum);
-        struct sockaddr_storage clientAddr;
+        char * poisonBuf = "\0";
         // join all thread and free mutex
         for (int i = 0; i < threadNum; i++) {
-            addContent(-1000,clientAddr);
+            addContent(-1000,poisonBuf);
         }
         // printf("Done kill thread\n");
         pthread_mutex_destroy(&mutexQueue);
