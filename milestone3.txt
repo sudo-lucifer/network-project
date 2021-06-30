@@ -1,0 +1,323 @@
+commit 5454037a1d23ed2b5f8f9970310b3e67e05ed692
+Author: Krittin <krittin.niu@stuent.mahidol.edu>
+Date:   Wed Jun 30 23:44:34 2021 +0700
+
+    Final Project 3: obtimize code, include test
+
+diff --git a/Makefile b/Makefile
+index 42c7af3..cf6b97c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -11,7 +11,7 @@ CC  := gcc
+ # C PreProcessor Flag
+ CPPFLAGS := 
+ # compiler flags
+-CFLAGS   := -g -Wall # for debug -g -Wall
++CFLAGS   := -O3 # for debug -g -Wall
+ # DEPS = parse.h y.tab.hA
+ LIBFLAGS = -pthread
+ 
+diff --git a/benchmarks.txt b/benchmarks.txt
+new file mode 100644
+index 0000000..767f09a
+--- /dev/null
++++ b/benchmarks.txt
+@@ -0,0 +1,15 @@
++** SIEGE 4.0.4
++** Preparing 10 concurrent users for battle.
++The server is now under siege...
++Transactions:                 100000 hits
++Availability:                 100.00 %
++Elapsed time:                  36.63 secs
++Data transferred:             417.33 MB
++Response time:                  0.00 secs
++Transaction rate:            2730.00 trans/sec
++Throughput:                    11.39 MB/sec
++Concurrency:                    9.08
++Successful transactions:      100000
++Failed transactions:               0
++Longest transaction:            3.05
++Shortest transaction:           0.00
+\ No newline at end of file
+diff --git a/sample-www/test.html b/sample-www/test.html
+new file mode 100644
+index 0000000..56f9835
+--- /dev/null
++++ b/sample-www/test.html
+@@ -0,0 +1,171 @@
++<!doctype html>
++<html>
++
++<head>
++    <style>
++        .navbar-header {
++            margin-left: 5px;
++            margin-right: 50px;
++            width: 99%;
++        }
++
++        .navbar {
++            background-color: beige;
++            margin-bottom: 10px;
++            padding-right: 20px;
++        }
++
++        li {
++            font-size: larger;
++        }
++
++        .container {
++            max-width: 1024px;
++        }
++
++        .container {
++            background-color: #eee;
++        }
++
++        h2 {
++            background-color: #1520ab;
++            color: #def;
++            padding: 0.2em;
++            font-size: 20px;
++        }
++
++        h2.prg {
++            background-color: #997;
++            color: #fef;
++            padding: 0.4em;
++        }
++
++        div.prg {
++            background-color: #d4d4ac;
++        }
++    </style>
++</head>
++
++<body>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <h1>Hello, it's me!!</h1>
++    <div class="container">
++        <h1>Hello, Sujinna PHUTATHAM (id: <code>u6181279</code>)</h1>
++        <h2>Select an assignment to submit/view:</h2>
++        <ul>
++
++            <li><a href="/1">Assignment 1</a></li>
++
++            <li><a href="/2">Assignment 2</a></li>
++
++            <li><a href="/3">Assignment 3</a></li>
++
++            <li><a href="/4">Assignment 4</a></li>
++
++            <li><a href="/5">Assignment 5</a></li>
++
++            <li><a href="/6">Assignment 6</a></li>
++
++            <li><a href="/7">Assignment 7</a></li>
++
++            <li><a href="/8">Assignment 8</a></li>
++
++            <li><a href="/9">Assignment 9</a></li>
++
++            <li><a href="/10">Assignment 10</a></li>
++
++            <li><a href="/11">Assignment 11</a></li>
++
++            <li><a href="/12">Assignment 12</a></li>
++
++            <li><a href="/13">Assignment 13</a></li>
++
++            <li><a href="/14">Assignment 14</a></li>
++
++            <li><a href="/15">Assignment 15</a></li>
++
++            <li><a href="/16">Assignment 16</a></li>
++
++            <li><a href="/17">Assignment 17</a></li>
++
++            <li><a href="/18">Assignment 18</a></li>
++
++            <li><a href="/19">Assignment 19</a></li>
++
++            <li><a href="/20">Assignment 20</a></li>
++
++            <li><a href="/21">Assignment 21</a></li>
++
++            <li><a href="/22">Assignment 22</a></li>
++
++            <li><a href="/23">Assignment 23</a></li>
++
++            <li><a href="/24">Assignment 24</a></li>
++
++            <li><a href="/25">Assignment 25</a></li>
++
++            <li><a href="/26">Assignment 26</a></li>
++
++            <li><a href="/27">Assignment 27</a></li>
++
++        </ul>
++    </div>
++</body>
++
++</html>
++
++<!--   Hello World Hello World   -->
+\ No newline at end of file
+diff --git a/src/icws.c b/src/icws.c
+index 2312978..dfcf620 100644
+--- a/src/icws.c
++++ b/src/icws.c
+@@ -417,6 +417,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
+     char * cuurentDate = getCurrentTime();
+     char loc[MAXBUF];                   
+     char headr[MAXBUF];                
++    char new_req[MAXBUF];
++    int fixReq = 0;
+     char * aliveHeader = getAliveHeader(alive);
+ 
+     strcpy(loc, dirName);               
+@@ -426,9 +428,22 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
+     else if (req_obj[0] != '/'){      
+         strcat(loc, "/");   
+     }
+-    strcat(loc, req_obj);
++    if (req_obj[strlen(req_obj) - 1] == '/'){
++        fixReq = 1;
++        size_t sizeCopy = strlen(req_obj) - 1;
++        memset(new_req,0,MAXBUF);
++        for (int i = 0; i < sizeCopy; i++){
++            new_req[i] = req_obj[i];
++        }
++        // strncpy(new_req, req_obj, sizeCopy);
++        strcat(loc,new_req);
++    }
++    else{
++        strcat(loc, req_obj);
++    }
+ 
+     int fd = open( loc , O_RDONLY);
++    // printf("%d\n",fd);
+ 
+     if (fd < 0){
+         sprintf(headr, 
+@@ -447,6 +462,11 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
+ 
+     // find extension
+     char * ext = getExt(req_obj);
++    if (fixReq){
++        ext = getExt(new_req);
++    }
++    // printf("new_req: %s\n", new_req);
++    // printf("ext: %s\n", ext);
+     char * mime = check_mime(ext);
+     // printf("mime: %s\n", mime);
+ 
+@@ -561,6 +581,7 @@ void serve_http(int connFd, char * svcBuf) {
+                 }
+                 memset(lineByline, 0, MAXBUF);
+             }
++            // printf("buffer: %s\n", buf);
+             char * ptr = strstr(buf, "\r\n\r\n");
+             int message_size = MAXBUF;
+             char * message_body = malloc(sizeof(char) * message_size);
+@@ -588,6 +609,8 @@ void serve_http(int connFd, char * svcBuf) {
+                             if (strcasecmp(save_buf, "") == 0){
+                                 free(request->headers);
+                                 free(request);
++                                // free(save_buf);
++                                // free(message_body);
+                                 shouldRead = 0;
+                                 needToReadBody = 1;
+                                 keep_alive = 1;
+@@ -603,7 +626,6 @@ void serve_http(int connFd, char * svcBuf) {
+                                 strcpy(buf, save_buf + content_length);
+                                 readRet = strlen( save_buf + content_length);
+                                 free(save_buf);
+-                                // free(save_big_buf);
+                             }
+                             
+                         }
+@@ -749,8 +771,6 @@ void addContent(int connFd, char * svcBuf){
+     threadContent job;
+     job.connFd = connFd;
+     job.svcBuf = strdup(svcBuf);
+-    // memcpy(&job.clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
+-    // need handle queue is full
+     JobQueue[JobCount] = job;
+     JobCount++;
+     pthread_mutex_unlock(&mutexQueue);
+@@ -855,10 +875,16 @@ int main(int argc, char* argv[]) {
+                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
+                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
+ 
+-                serve_http(connFd, svcBuf);
+-                close(connFd);
+-                continue;
+-                addContent(connFd, svcBuf);
++                struct sockaddr_in *pV4Addr = (struct sockaddr_in *) &clientAddr;
++                struct in_addr ipAddr = pV4Addr->sin_addr;
++
++                char remoteAddr[INET_ADDRSTRLEN];
++                inet_ntop(AF_INET, &ipAddr, remoteAddr, INET_ADDRSTRLEN);
++                // for testing
++                // serve_http(connFd, svcBuf);
++                // close(connFd);
++                // continue;
++                addContent(connFd, remoteAddr);
+         }
+         
+         // printf("SIGINT: Join thread: %d\n", threadNum);
