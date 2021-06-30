@@ -417,6 +417,8 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     char * cuurentDate = getCurrentTime();
     char loc[MAXBUF];                   
     char headr[MAXBUF];                
+    char new_req[MAXBUF];
+    int fixReq = 0;
     char * aliveHeader = getAliveHeader(alive);
 
     strcpy(loc, dirName);               
@@ -426,9 +428,22 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
     else if (req_obj[0] != '/'){      
         strcat(loc, "/");   
     }
-    strcat(loc, req_obj);
+    if (req_obj[strlen(req_obj) - 1] == '/'){
+        fixReq = 1;
+        size_t sizeCopy = strlen(req_obj) - 1;
+        memset(new_req,0,MAXBUF);
+        for (int i = 0; i < sizeCopy; i++){
+            new_req[i] = req_obj[i];
+        }
+        // strncpy(new_req, req_obj, sizeCopy);
+        strcat(loc,new_req);
+    }
+    else{
+        strcat(loc, req_obj);
+    }
 
     int fd = open( loc , O_RDONLY);
+    // printf("%d\n",fd);
 
     if (fd < 0){
         sprintf(headr, 
@@ -447,6 +462,11 @@ void respond_get(int connFd, char* req_obj, int isHEAD, int alive) {
 
     // find extension
     char * ext = getExt(req_obj);
+    if (fixReq){
+        ext = getExt(new_req);
+    }
+    // printf("new_req: %s\n", new_req);
+    // printf("ext: %s\n", ext);
     char * mime = check_mime(ext);
     // printf("mime: %s\n", mime);
 
@@ -561,6 +581,7 @@ void serve_http(int connFd, char * svcBuf) {
                 }
                 memset(lineByline, 0, MAXBUF);
             }
+            // printf("buffer: %s\n", buf);
             char * ptr = strstr(buf, "\r\n\r\n");
             int message_size = MAXBUF;
             char * message_body = malloc(sizeof(char) * message_size);
@@ -588,6 +609,8 @@ void serve_http(int connFd, char * svcBuf) {
                             if (strcasecmp(save_buf, "") == 0){
                                 free(request->headers);
                                 free(request);
+                                // free(save_buf);
+                                // free(message_body);
                                 shouldRead = 0;
                                 needToReadBody = 1;
                                 keep_alive = 1;
@@ -603,7 +626,6 @@ void serve_http(int connFd, char * svcBuf) {
                                 strcpy(buf, save_buf + content_length);
                                 readRet = strlen( save_buf + content_length);
                                 free(save_buf);
-                                // free(save_big_buf);
                             }
                             
                         }
@@ -749,8 +771,6 @@ void addContent(int connFd, char * svcBuf){
     threadContent job;
     job.connFd = connFd;
     job.svcBuf = strdup(svcBuf);
-    // memcpy(&job.clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
-    // need handle queue is full
     JobQueue[JobCount] = job;
     JobCount++;
     pthread_mutex_unlock(&mutexQueue);
@@ -855,10 +875,16 @@ int main(int argc, char* argv[]) {
                                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)!=0) 
                         printf("%sConnection from ?UNKNOWN?%s\n", PURPLE, RESET);
 
-                serve_http(connFd, svcBuf);
-                close(connFd);
-                continue;
-                addContent(connFd, svcBuf);
+                struct sockaddr_in *pV4Addr = (struct sockaddr_in *) &clientAddr;
+                struct in_addr ipAddr = pV4Addr->sin_addr;
+
+                char remoteAddr[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &ipAddr, remoteAddr, INET_ADDRSTRLEN);
+                // for testing
+                // serve_http(connFd, svcBuf);
+                // close(connFd);
+                // continue;
+                addContent(connFd, remoteAddr);
         }
         
         // printf("SIGINT: Join thread: %d\n", threadNum);

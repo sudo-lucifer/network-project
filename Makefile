@@ -11,7 +11,7 @@ CC  := gcc
 # C PreProcessor Flag
 CPPFLAGS := 
 # compiler flags
-CFLAGS   := -g -Wall # for debug -g -Wall
+CFLAGS   := -O3 # for debug -g -Wall
 # DEPS = parse.h y.tab.hA
 LIBFLAGS = -pthread
 
